@@ -69,6 +69,9 @@ def main():
     print("1. Test: pip install dist/*.whl")
     print("2. Upload: python -m twine upload dist/*")
     print("3. TestPyPI: python -m twine upload --repository testpypi dist/*")
+    success = True
+
+    return success
 
 
 if __name__ == "__main__":
