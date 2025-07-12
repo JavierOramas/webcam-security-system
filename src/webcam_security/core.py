@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 import signal
 import sys
-]\import sounddevice as sd
+import sounddevice as sd
 import soundfile as sf
 import ffmpeg
 
@@ -124,26 +124,35 @@ class SecurityMonitor:
             print(f"[ERROR] Audio recording failed: {e}")
 
     def _merge_audio_video(self) -> None:
-        """Merge audio and video files into a single MP4 file."""
+        """Merge audio and video files into a single MP4 file using subprocess and ffmpeg CLI."""
+        import subprocess
+
         try:
             print("[INFO] Merging audio and video...")
 
-            # Use ffmpeg to merge audio and video
-            video_stream = ffmpeg.input(self.video_path)
-            audio_stream = ffmpeg.input(self.audio_path)
-
-            # Combine video and audio streams
-            output_stream = ffmpeg.output(
-                video_stream,
-                audio_stream,
+            # Build ffmpeg command
+            cmd = [
+                "ffmpeg",
+                "-y",  # Overwrite output file if exists
+                "-i", self.video_path,
+                "-i", self.audio_path,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-strict", "experimental",
                 self.final_path,
-                vcodec="copy",
-                acodec="aac",
-                strict="experimental",
+            ]
+
+            # Run ffmpeg as a subprocess
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
 
-            # Run the ffmpeg command
-            ffmpeg.run(output_stream, overwrite_output=True, quiet=True)
+            if result.returncode != 0:
+                print(f"[ERROR] ffmpeg failed: {result.stderr}")
+                raise RuntimeError("ffmpeg merge failed")
 
             # Clean up temporary files
             if os.path.exists(self.video_path):
