@@ -96,6 +96,8 @@ jobs:
           
           Automated release for version ${{ steps.version.outputs.version }}
           
+          **Commit message:** ${{ github.event.head_commit.message }}
+          
           ### Features
           - 🎥 Real-time motion detection using webcam
           - 📱 Telegram notifications with snapshots

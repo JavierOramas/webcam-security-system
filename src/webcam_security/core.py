@@ -11,8 +11,30 @@ from pathlib import Path
 from typing import Optional
 import signal
 import sys
-import sounddevice as sd
-import soundfile as sf
+import subprocess
+
+# Optional audio imports
+try:
+    import sounddevice as sd
+    import soundfile as sf
+
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+    print(
+        "[WARNING] Audio recording not available. Install sounddevice and soundfile for audio support."
+    )
+
+# Optional ffmpeg import
+try:
+    import ffmpeg
+
+    FFMPEG_AVAILABLE = True
+except ImportError:
+    FFMPEG_AVAILABLE = False
+    print(
+        "[WARNING] FFmpeg not available. Install ffmpeg-python for audio/video merging."
+    )
 
 from .config import Config
 
@@ -108,6 +130,10 @@ class SecurityMonitor:
 
     def _record_audio(self, audio_path: str) -> None:
         """Record audio in a separate thread."""
+        if not AUDIO_AVAILABLE:
+            print("[WARNING] Audio recording skipped - sounddevice not available")
+            return
+
         try:
             samplerate = 44100
             channels = 1
@@ -133,11 +159,16 @@ class SecurityMonitor:
             cmd = [
                 "ffmpeg",
                 "-y",  # Overwrite output file if exists
-                "-i", self.video_path,
-                "-i", self.audio_path,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-strict", "experimental",
+                "-i",
+                self.video_path,
+                "-i",
+                self.audio_path,
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-strict",
+                "experimental",
                 self.final_path,
             ]
 
@@ -239,13 +270,20 @@ class SecurityMonitor:
             # Only process motion detection during monitoring hours
             if motion_detected and self.is_monitoring_hours():
                 if not recording:
+                    audio_status = "with audio" if AUDIO_AVAILABLE else "video only"
                     print(
-                        "[INFO] Motion detected during monitoring hours. Starting recording with audio."
+                        f"[INFO] Motion detected during monitoring hours. Starting recording {audio_status}."
                     )
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    video_path = f"temp_video_{timestamp}.avi"
-                    audio_path = f"temp_audio_{timestamp}.wav"
-                    final_path = f"recording_{timestamp}.mp4"
+
+                    if AUDIO_AVAILABLE and FFMPEG_AVAILABLE:
+                        video_path = f"temp_video_{timestamp}.avi"
+                        audio_path = f"temp_audio_{timestamp}.wav"
+                        final_path = f"recording_{timestamp}.mp4"
+                    else:
+                        video_path = f"recording_{timestamp}.avi"
+                        final_path = video_path
+
                     snapshot_path = f"snapshot_{timestamp}.jpg"
 
                     # Fix: Use proper fourcc code
@@ -257,17 +295,18 @@ class SecurityMonitor:
                         (frame.shape[1], frame.shape[0]),
                     )
 
-                    # Start audio recording
-                    self.audio_recording = True
-                    self.audio_thread = threading.Thread(
-                        target=self._record_audio, args=(audio_path,), daemon=True
-                    )
-                    self.audio_thread.start()
+                    # Start audio recording if available
+                    if AUDIO_AVAILABLE:
+                        self.audio_recording = True
+                        self.audio_thread = threading.Thread(
+                            target=self._record_audio, args=(audio_path,), daemon=True
+                        )
+                        self.audio_thread.start()
 
-                    # Store paths for later merging
-                    self.video_path = video_path
-                    self.audio_path = audio_path
-                    self.final_path = final_path
+                        # Store paths for later merging
+                        self.video_path = video_path
+                        self.audio_path = audio_path
+                        self.final_path = final_path
 
                     cv2.imwrite(snapshot_path, frame)
                     self.send_telegram_photo(snapshot_path, "🚨 Motion detected!")
@@ -292,15 +331,17 @@ class SecurityMonitor:
                     if self.out is not None:
                         self.out.release()
 
-                    # Stop audio recording
-                    if self.audio_recording:
+                    # Stop audio recording if available
+                    if AUDIO_AVAILABLE and self.audio_recording:
                         self.audio_recording = False
                         if self.audio_thread:
                             self.audio_thread.join(timeout=5)
 
-                    # Merge audio and video into single file
+                    # Merge audio and video into single file if available
                     if (
-                        hasattr(self, "video_path")
+                        AUDIO_AVAILABLE
+                        and FFMPEG_AVAILABLE
+                        and hasattr(self, "video_path")
                         and hasattr(self, "audio_path")
                         and hasattr(self, "final_path")
                     ):
@@ -338,7 +379,7 @@ class SecurityMonitor:
             self.out.release()
 
         # Stop audio recording if still running
-        if self.audio_recording:
+        if AUDIO_AVAILABLE and self.audio_recording:
             self.audio_recording = False
             if self.audio_thread:
                 self.audio_thread.join(timeout=5)
@@ -386,7 +427,7 @@ class SecurityMonitor:
             self.out = None
 
         # Stop audio recording if running
-        if self.audio_recording:
+        if AUDIO_AVAILABLE and self.audio_recording:
             self.audio_recording = False
             if self.audio_thread:
                 self.audio_thread.join(timeout=5)
