@@ -1,0 +1,72 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Bump version
+      id: bump
+      run: |
+        # Get current version from pyproject.toml
+        CURRENT_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
+        echo "Current version: $CURRENT_VERSION"
+        
+        # Parse version components
+        IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+        
+        # Bump version based on input
+        if [ "${{ github.event.inputs.bump_type }}" = "major" ]; then
+          major=$((major + 1))
+          minor=0
+          patch=0
+        elif [ "${{ github.event.inputs.bump_type }}" = "minor" ]; then
+          minor=$((minor + 1))
+          patch=0
+        else
+          patch=$((patch + 1))
+        fi
+        
+        NEW_VERSION="$major.$minor.$patch"
+        echo "New version: $NEW_VERSION"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        
+        # Update pyproject.toml
+        sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+        
+        # Update setup.py if it exists
+        if [ -f "setup.py" ]; then
+          sed -i "s/version=\".*\"/version=\"$NEW_VERSION\"/" setup.py
+        fi
+        
+        # Update __init__.py
+        sed -i "s/__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" src/webcam_security/__init__.py
+    
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "Bump version to ${{ steps.bump.outputs.new_version }}"
+        title: "Bump version to ${{ steps.bump.outputs.new_version }}"
+        body: |
+          Automated version bump to ${{ steps.bump.outputs.new_version }}
+          
+          This PR was created by the version bump workflow.
+        branch: version-bump-${{ steps.bump.outputs.new_version }}
+        delete-branch: true 

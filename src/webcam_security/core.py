@@ -13,7 +13,6 @@ import signal
 import sys
 import sounddevice as sd
 import soundfile as sf
-import ffmpeg
 
 from .config import Config
 
