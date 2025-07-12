@@ -1,161 +1,35 @@
-name: Release Package
+name: PyPI Release
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - "v*"
 
 jobs:
-  test-and-release:
+  build-and-publish:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg portaudio19-dev
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
 
-    - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH || true
-        echo "$HOME/.local/bin" >> $GITHUB_PATH || true
+      - name: Build package
+        run: |
+          python build_package.py
 
-    - name: Install dependencies (dev)
-      run: uv pip install -e ".[dev]"
-
-    - name: Run tests and import check
-      run: |
-        python -c "
-        import sys
-        sys.path.insert(0, 'src')
-        try:
-            from webcam_security import SecurityMonitor, Config
-            from webcam_security.cli import app
-            print('✅ All imports successful')
-        except ImportError as e:
-            print(f'⚠️  Import warning (audio dependencies): {e}')
-            print('✅ Core functionality available')
-        "
-
-    - name: Build and check package
-      run: |
-        uv pip install build twine
-        uv run python -m build
-        uv run python -m twine check dist/*
-
-    - name: Extract version
-      id: version
-      run: |
-        VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.version.outputs.version }}
-        name: Release v${{ steps.version.outputs.version }}
-        body: |
-          Automated release for version ${{ steps.version.outputs.version }}
-        files: |
-          dist/*.whl
-          dist/*.tar.gz
-        draft: false
-        prerelease: false
-      env:
-  release:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.12"
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg portaudio19-dev
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Check package
-      run: python -m twine check dist/*
-    
-    - name: Generate version
-      id: version
-      run: |
-        # Extract version from pyproject.toml
-        VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.version.outputs.version }}
-        name: Release v${{ steps.version.outputs.version }}
-        body: |
-          ## What's Changed
-          
-          Automated release for version ${{ steps.version.outputs.version }}
-          
-          **Commit message:** ${{ github.event.head_commit.message }}
-          
-          ### Features
-          - 🎥 Real-time motion detection using webcam
-          - 📱 Telegram notifications with snapshots
-          - ⏰ Configurable monitoring hours (default: 10 PM - 6 AM)
-          - 🎬 Automatic video recording on motion detection
-          - 🎵 Audio recording with video (combined MP4 format)
-          - 🧹 Automatic cleanup of old recordings
-          - 🖥️ Live preview with monitoring status
-          - 🚀 Easy-to-use CLI interface
-          
-          ### Installation
-          ```bash
-          pip install webcam-security
-          ```
-          
-          ### Quick Start
-          ```bash
-          webcam-security init --bot-token "YOUR_BOT_TOKEN" --chat-id "YOUR_CHAT_ID"
-          webcam-security start
-          ```
-        files: |
-          dist/*.whl
-          dist/*.tar.gz
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Publish to PyPI
-      if: github.ref == 'refs/heads/main'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
-        skip-existing: true 
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload dist/* 
