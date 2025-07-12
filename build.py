@@ -10,23 +10,46 @@ import time
 
 
 def run_command(cmd, description, check=True):
-    """Run a command and handle errors."""
+    """Run a command and handle errors, streaming output live."""
     print(f"🔄 {description}...")
+    import shlex
+    import threading
+    import sys
+    import time
+
     start_time = time.time()
+    process = subprocess.Popen(
+        shlex.split(cmd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
+    )
 
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    def stream(pipe, prefix):
+        for line in iter(pipe.readline, ""):
+            print(f"{prefix}{line}", end="")
+        pipe.close()
 
+    threads = [
+        threading.Thread(target=stream, args=(process.stdout, "")),
+        threading.Thread(target=stream, args=(process.stderr, "[stderr] ")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    process.wait()
     elapsed = time.time() - start_time
-
-    if result.returncode != 0:
-        print(f"❌ Error ({elapsed:.2f}s): {result.stderr}")
+    if process.returncode != 0:
+        print(
+            f"❌ Error ({elapsed:.2f}s): Command failed with exit code {process.returncode}"
+        )
         if check:
             return False
     else:
         print(f"✅ {description} completed ({elapsed:.2f}s)")
-        if result.stdout.strip():
-            print(result.stdout)
-
     return True
 
 
@@ -64,15 +87,10 @@ def main():
     ):
         return False
 
-    # Build the package with UV (uses cached dependencies)
-    if not run_command("uv run python -m build --wheel", "Building wheel package"):
-        return False
-
-    # Also build source distribution
-    if not run_command(
-        "uv run python -m build --sdist", "Building source distribution"
-    ):
-        return False
+    # # Build wheel and source distribution in one command
+    # if not run_command("uv run python -m build", "Building package"):
+    #     return False
+    # os.system("uv run python -m build")
 
     # Check the built package
     if not run_command("uv run python -m twine check dist/*", "Checking package"):

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling>=1.8.0"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "webcam-security"
@@ -58,18 +58,8 @@ Homepage = "https://github.com/yourusername/webcam-security"
 Repository = "https://github.com/yourusername/webcam-security"
 Issues = "https://github.com/yourusername/webcam-security/issues"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/webcam_security"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "src/",
-    "tests/",
-    "README.md",
-    "LICENSE",
-    "MANIFEST.in",
-    "pyproject.toml",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.black]
 line-length = 88

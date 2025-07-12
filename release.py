@@ -82,8 +82,8 @@ def build_package():
     ):
         return False
 
-    # Build wheel and source distribution
-    if not run_command("uv run python -m build --wheel --sdist", "Building package"):
+    # Build wheel and source distribution in one command
+    if not run_command("uv run python -m build", "Building package"):
         return False
 
     # Check the built package

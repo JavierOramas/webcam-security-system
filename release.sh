@@ -114,8 +114,8 @@ build_package() {
     # Install build dependencies
     run_command "uv pip install hatchling build twine" "Installing build dependencies"
     
-    # Build wheel and source distribution
-    run_command "uv run python -m build --wheel --sdist" "Building package"
+    # Build wheel and source distribution in one command
+    run_command "uv run python -m build" "Building package"
     
     # Check the built package
     run_command "uv run python -m twine check dist/*" "Checking package"
