@@ -222,30 +222,43 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             
             if has_update:
                 message = f"""
-🔄 <b>Update Available</b>
+                🔄 <b>Update Available</b>
 
-Device: <code>{self.get_device_identifier()}</code>
-Current Version: <code>{current_version}</code>
-Latest Version: <code>{latest_version}</code>
+                Device: <code>{self.get_device_identifier()}</code>
+                Current Version: <code>{current_version}</code>
+                Latest Version: <code>{latest_version}</code>
 
-Run: <code>pip install --upgrade webcam-security</code>
+                Run: <code>pip install --upgrade webcam-security</code>
+                                """
+                self.send_message(message.strip())
+
+                SelfUpdater.auto_update()
+
+                message = f"""
+                ✅ <b>Update Applied</b>
+
+                Device: <code>{self.get_device_identifier()}</code>
+                Current Version: <code>{current_version}</code>
+                Latest Version: <code>{latest_version}</code>
                 """
+                self.send_message(message.strip())
+ 
             elif latest_version == "unknown":
                 message = f"""
-⚠️ <b>Update Check Failed</b>
+                ⚠️ <b>Update Check Failed</b>
 
-Device: <code>{self.get_device_identifier()}</code>
-Current Version: <code>{current_version}</code>
-Error: Could not check for updates
-                """
+                Device: <code>{self.get_device_identifier()}</code>
+                Current Version: <code>{current_version}</code>
+                Error: Could not check for updates
+                                """
             else:
                 message = f"""
-✅ <b>Up to Date</b>
+                ✅ <b>Up to Date</b>
 
-Device: <code>{self.get_device_identifier()}</code>
-Current Version: <code>{current_version}</code>
-Status: Latest version installed
-                """
+                Device: <code>{self.get_device_identifier()}</code>
+                Current Version: <code>{current_version}</code>
+                Status: Latest version installed
+                                """
             
             self.send_message(message.strip())
             
