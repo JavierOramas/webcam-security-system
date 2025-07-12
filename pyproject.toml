@@ -29,6 +29,9 @@ dependencies = [
     "requests>=2.25.0",
     "typer>=0.9.0",
     "rich>=13.0.0",
+    "sounddevice>=0.4.0",
+    "soundfile>=0.12.0",
+    "ffmpeg-python>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -43,9 +46,9 @@ dev = [
 webcam-security = "webcam_security.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/JavierOramas/webcam-security"
-Repository = "https://github.com/JavierOramas/webcam-security"
-Issues = "https://github.com/JavierOramas/webcam-security/issues"
+Homepage = "https://github.com/yourusername/webcam-security"
+Repository = "https://github.com/yourusername/webcam-security"
+Issues = "https://github.com/yourusername/webcam-security/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

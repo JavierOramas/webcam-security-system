@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Optional
 import signal
 import sys
+]\import sounddevice as sd
+import soundfile as sf
+import ffmpeg
 
 from .config import Config
 
@@ -24,6 +27,8 @@ class SecurityMonitor:
         self.cap: Optional[cv2.VideoCapture] = None
         self.out: Optional[cv2.VideoWriter] = None
         self.cleaner_thread: Optional[threading.Thread] = None
+        self.audio_recording = False
+        self.audio_thread: Optional[threading.Thread] = None
 
     def is_monitoring_hours(self) -> bool:
         """Check if current time is between monitoring hours."""
@@ -63,17 +68,22 @@ class SecurityMonitor:
             days_to_keep = self.config.cleanup_days
 
         current_dir = Path.cwd()
-        recording_files = list(current_dir.glob("recording_*.avi"))
-        recording_files.sort(key=lambda x: x.stat().st_ctime)
+        recording_files = list(current_dir.glob("recording_*.mp4"))
+        temp_video_files = list(current_dir.glob("temp_video_*.avi"))
+        temp_audio_files = list(current_dir.glob("temp_audio_*.wav"))
+
+        # Combine and sort all files by creation time
+        all_files = recording_files + temp_video_files + temp_audio_files
+        all_files.sort(key=lambda x: x.stat().st_ctime)
 
         current_time = time.time()
         threshold_time = current_time - (days_to_keep * 24 * 60 * 60)
 
-        for file in recording_files:
+        for file in all_files:
             if file.stat().st_ctime < threshold_time:
                 try:
                     file.unlink()
-                    print(f"[INFO] Removed old recording: {file}")
+                    print(f"[INFO] Removed old file: {file}")
                 except Exception as e:
                     print(f"[ERROR] Failed to remove {file}: {e}")
 
@@ -97,12 +107,81 @@ class SecurityMonitor:
                 print(f"[ERROR] Cleanup scheduler error: {e}")
                 time.sleep(60)  # Wait a minute before retrying
 
+    def _record_audio(self, audio_path: str) -> None:
+        """Record audio in a separate thread."""
+        try:
+            samplerate = 44100
+            channels = 1
+
+            with sf.SoundFile(
+                audio_path, mode="w", samplerate=samplerate, channels=channels
+            ) as file:
+                with sd.InputStream(samplerate=samplerate, channels=channels) as stream:
+                    while self.audio_recording:
+                        data, _ = stream.read(1024)
+                        file.write(data)
+        except Exception as e:
+            print(f"[ERROR] Audio recording failed: {e}")
+
+    def _merge_audio_video(self) -> None:
+        """Merge audio and video files into a single MP4 file."""
+        try:
+            print("[INFO] Merging audio and video...")
+
+            # Use ffmpeg to merge audio and video
+            video_stream = ffmpeg.input(self.video_path)
+            audio_stream = ffmpeg.input(self.audio_path)
+
+            # Combine video and audio streams
+            output_stream = ffmpeg.output(
+                video_stream,
+                audio_stream,
+                self.final_path,
+                vcodec="copy",
+                acodec="aac",
+                strict="experimental",
+            )
+
+            # Run the ffmpeg command
+            ffmpeg.run(output_stream, overwrite_output=True, quiet=True)
+
+            # Clean up temporary files
+            if os.path.exists(self.video_path):
+                os.remove(self.video_path)
+            if os.path.exists(self.audio_path):
+                os.remove(self.audio_path)
+
+            print(f"[INFO] Created combined recording: {self.final_path}")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to merge audio and video: {e}")
+            # If merging fails, keep the original files
+            if os.path.exists(self.video_path):
+                os.rename(self.video_path, self.final_path.replace(".mp4", ".avi"))
+
     def motion_detector(self) -> None:
         """Main motion detection loop."""
-        self.cap = cv2.VideoCapture(0)
-        if not self.cap.isOpened():
-            print("[ERROR] Could not open webcam")
-            return
+        # Try to open the webcam, but allow user to grant permission if needed
+        self.cap = None
+        max_wait_time = 60  # seconds to wait for user to allow camera access
+        wait_interval = 2  # seconds between attempts
+        waited = 0
+
+        while self.cap is None or not self.cap.isOpened():
+            if self.cap is not None:
+                self.cap.release()
+            self.cap = cv2.VideoCapture(0)
+            if self.cap.isOpened():
+                break
+            if waited == 0:
+                print(
+                    "[INFO] Waiting for webcam access. Please allow camera permission if prompted..."
+                )
+            time.sleep(wait_interval)
+            waited += wait_interval
+            if waited >= max_wait_time:
+                print("[ERROR] Could not open webcam after waiting for permission.")
+                return
 
         time.sleep(2)
 
@@ -153,10 +232,12 @@ class SecurityMonitor:
             if motion_detected and self.is_monitoring_hours():
                 if not recording:
                     print(
-                        "[INFO] Motion detected during monitoring hours. Starting recording."
+                        "[INFO] Motion detected during monitoring hours. Starting recording with audio."
                     )
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    video_path = f"recording_{timestamp}.avi"
+                    video_path = f"temp_video_{timestamp}.avi"
+                    audio_path = f"temp_audio_{timestamp}.wav"
+                    final_path = f"recording_{timestamp}.mp4"
                     snapshot_path = f"snapshot_{timestamp}.jpg"
 
                     # Fix: Use proper fourcc code
@@ -167,6 +248,18 @@ class SecurityMonitor:
                         self.config.recording_fps,
                         (frame.shape[1], frame.shape[0]),
                     )
+
+                    # Start audio recording
+                    self.audio_recording = True
+                    self.audio_thread = threading.Thread(
+                        target=self._record_audio, args=(audio_path,), daemon=True
+                    )
+                    self.audio_thread.start()
+
+                    # Store paths for later merging
+                    self.video_path = video_path
+                    self.audio_path = audio_path
+                    self.final_path = final_path
 
                     cv2.imwrite(snapshot_path, frame)
                     self.send_telegram_photo(snapshot_path, "🚨 Motion detected!")
@@ -190,6 +283,21 @@ class SecurityMonitor:
                     print("[INFO] No motion for a while. Stopping recording.")
                     if self.out is not None:
                         self.out.release()
+
+                    # Stop audio recording
+                    if self.audio_recording:
+                        self.audio_recording = False
+                        if self.audio_thread:
+                            self.audio_thread.join(timeout=5)
+
+                    # Merge audio and video into single file
+                    if (
+                        hasattr(self, "video_path")
+                        and hasattr(self, "audio_path")
+                        and hasattr(self, "final_path")
+                    ):
+                        self._merge_audio_video()
+
                     self.out = None
                     recording = False
                     telegram_sent = False
@@ -220,6 +328,13 @@ class SecurityMonitor:
         # Cleanup
         if recording and self.out is not None:
             self.out.release()
+
+        # Stop audio recording if still running
+        if self.audio_recording:
+            self.audio_recording = False
+            if self.audio_thread:
+                self.audio_thread.join(timeout=5)
+
         if self.cap is not None:
             self.cap.release()
         cv2.destroyAllWindows()
@@ -261,6 +376,12 @@ class SecurityMonitor:
         if self.out is not None:
             self.out.release()
             self.out = None
+
+        # Stop audio recording if running
+        if self.audio_recording:
+            self.audio_recording = False
+            if self.audio_thread:
+                self.audio_thread.join(timeout=5)
 
         if self.cap is not None:
             self.cap.release()

@@ -44,7 +44,9 @@ def init(
         )
 
         console.print(
-            f"\n[bold]Configuration saved to:[/bold] {config._get_config_path()}"
+            f"""\n[bold]Configuration saved to:[/bold] {config._get_config_path()} \n
+            [bold]Modify other settings in the file if needed.[/bold]
+            """
         )
         console.print("\n[bold]Next steps:[/bold]")
         console.print(
@@ -76,6 +78,8 @@ def start() -> None:
                 border_style="blue",
             )
         )
+
+        console.print(f"\n[bold]Configuration file:[/bold] {config._get_config_path()}")
 
         console.print("\n[bold]Monitoring Configuration:[/bold]")
         console.print(

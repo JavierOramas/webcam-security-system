@@ -16,9 +16,9 @@ class Config:
     topic_id: Optional[str] = None
     monitoring_start_hour: int = 22  # 10 PM
     monitoring_end_hour: int = 6  # 6 AM
-    grace_period: int = 60  # seconds
+    grace_period: int = 25  # seconds
     min_contour_area: int = 500
-    motion_threshold: int = 25
+    motion_threshold: int = 25 
     recording_fps: float = 20.0
     cleanup_days: int = 3
 

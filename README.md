@@ -8,6 +8,7 @@ A Python package for webcam security monitoring with Telegram notifications. Thi
 - 📱 Telegram notifications with snapshots
 - ⏰ Configurable monitoring hours (default: 10 PM - 6 AM)
 - 🎬 Automatic video recording on motion detection
+- 🎵 Audio recording with video (combined MP4 format)
 - 🧹 Automatic cleanup of old recordings
 - 🖥️ Live preview with monitoring status
 - 🚀 Easy-to-use CLI interface
@@ -50,6 +51,23 @@ webcam-security stop
 
 - **Bot Token**: Your Telegram bot token from @BotFather
 - **Chat ID**: The chat ID where notifications will be sent
+
+### Configuration json:
+This configuration file (`config.json`) contains all the settings required for the webcam-security system to function. Each field controls a specific aspect of how the monitoring and notifications work:
+
+- **bot_token**: The Telegram bot token you get from @BotFather. This allows the system to send you notifications via Telegram.
+- **chat_id**: The unique identifier for the Telegram chat (group, channel, or user) where alerts and recordings will be sent.
+- **topic_id**: (Optional) If you are using a forum-style Telegram channel, this specifies the topic/thread for notifications.
+- **monitoring_start_hour**: The hour (in 24-hour format) when monitoring should begin each day. Default is `22` (10 PM).
+- **monitoring_end_hour**: The hour (in 24-hour format) when monitoring should stop each day. Default is `6` (6 AM).
+- **grace_period**: The number of seconds to keep recording after motion is last detected. This helps capture the full event. Default is `25` seconds.
+- **min_contour_area**: The minimum size (in pixels) of detected motion to trigger recording and notifications. Helps filter out small, irrelevant movements. Default is `500`.
+- **motion_threshold**: The sensitivity of motion detection. Lower values make the system more sensitive to small changes. Default is `25`.
+- **recording_fps**: Frames per second for the recorded video files. Default is `20.0`.
+- **cleanup_days**: The number of days to keep old recordings before they are automatically deleted to save disk space. Default is `3`.
+
+You can edit this file directly to fine-tune the system’s behavior. The file is typically located at `~/.webcam_security/config.json` in your home directory. Make sure to keep your bot token private and do not share this file publicly.
+
 
 ### Optional Parameters
 
@@ -98,6 +116,7 @@ webcam-security stop --help
 - Webcam access
 - Internet connection for Telegram notifications
 - OpenCV compatible camera
+- FFmpeg (for audio/video merging)
 
 ## Development
 
