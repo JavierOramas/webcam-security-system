@@ -12,6 +12,10 @@ from typing import Optional
 import signal
 import sys
 import subprocess
+import sounddevice as sd
+import soundfile as sf
+import ffmpeg
+import socket
 
 # Optional audio imports
 try:
@@ -37,6 +41,7 @@ except ImportError:
     )
 
 from .config import Config
+from .telegram_bot import TelegramBotHandler
 
 
 class SecurityMonitor:
@@ -50,9 +55,14 @@ class SecurityMonitor:
         self.cleaner_thread: Optional[threading.Thread] = None
         self.audio_recording = False
         self.audio_thread: Optional[threading.Thread] = None
+        self.telegram_bot: Optional[TelegramBotHandler] = None
 
     def is_monitoring_hours(self) -> bool:
         """Check if current time is between monitoring hours."""
+        # If force monitoring is enabled, always return True
+        if self.config.force_monitoring:
+            return True
+
         current_hour = datetime.now().hour
         start_hour = self.config.monitoring_start_hour
         end_hour = self.config.monitoring_end_hour
@@ -62,26 +72,50 @@ class SecurityMonitor:
         else:
             return start_hour <= current_hour < end_hour
 
+    def get_device_identifier(self) -> str:
+        """Get device identifier, using hostname if not specified."""
+        if self.config.device_identifier:
+            return self.config.device_identifier
+        return socket.gethostname()
+
+    def notify_error(self, error_msg: str, context: str = "") -> None:
+        """Send an error notification to Telegram chat with device identifier."""
+        if self.telegram_bot:
+            device_id = self.get_device_identifier()
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            message = f"❌ <b>Error on {device_id}</b>\n<code>{timestamp}</code>\n<b>Context:</b> {context}\n<b>Details:</b> {error_msg}"
+            try:
+                self.telegram_bot.send_message(message)
+            except Exception as e:
+                print(f"[ERROR] Failed to send Telegram error notification: {e}")
+
     def send_telegram_photo(
         self, image_path: str, caption: str = "Motion detected!"
     ) -> None:
         """Send photo to Telegram."""
         try:
+            device_id = self.get_device_identifier()
+            enhanced_caption = f"🚨 {caption}\n\nDevice: {device_id}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+
             url = f"https://api.telegram.org/bot{self.config.bot_token}/sendPhoto"
             with open(image_path, "rb") as photo:
                 files = {"photo": photo}
                 data = {
                     "chat_id": self.config.chat_id,
-                    "caption": caption,
+                    "caption": enhanced_caption,
                 }
                 if self.config.topic_id:
                     data["message_thread_id"] = str(self.config.topic_id)
 
                 response = requests.post(url, files=files, data=data)
                 if response.status_code != 200:
-                    print(f"[ERROR] Telegram send failed: {response.text}")
+                    error_msg = f"Telegram send failed: {response.text}"
+                    print(f"[ERROR] {error_msg}")
+                    self.notify_error(error_msg, context="send_telegram_photo")
         except Exception as e:
-            print(f"[ERROR] Telegram send failed: {e}")
+            error_msg = f"Telegram send failed: {e}"
+            print(f"[ERROR] {error_msg}")
+            self.notify_error(str(e), context="send_telegram_photo")
 
     def clean_old_files(self, days_to_keep: Optional[int] = None) -> None:
         """Clean old recording files."""
@@ -106,7 +140,9 @@ class SecurityMonitor:
                     file.unlink()
                     print(f"[INFO] Removed old file: {file}")
                 except Exception as e:
-                    print(f"[ERROR] Failed to remove {file}: {e}")
+                    error_msg = f"Failed to remove {file}: {e}"
+                    print(f"[ERROR] {error_msg}")
+                    self.notify_error(str(e), context=f"clean_old_files: {file}")
 
     def clean_old_files_scheduler(self) -> None:
         """Scheduler for cleaning old files."""
@@ -125,7 +161,9 @@ class SecurityMonitor:
                 if self.running:
                     self.clean_old_files()
             except Exception as e:
-                print(f"[ERROR] Cleanup scheduler error: {e}")
+                error_msg = f"Cleanup scheduler error: {e}"
+                print(f"[ERROR] {error_msg}")
+                self.notify_error(str(e), context="clean_old_files_scheduler")
                 time.sleep(60)  # Wait a minute before retrying
 
     def _record_audio(self, audio_path: str) -> None:
@@ -146,7 +184,9 @@ class SecurityMonitor:
                         data, _ = stream.read(1024)
                         file.write(data)
         except Exception as e:
-            print(f"[ERROR] Audio recording failed: {e}")
+            error_msg = f"Audio recording failed: {e}"
+            print(f"[ERROR] {error_msg}")
+            self.notify_error(str(e), context="_record_audio")
 
     def _merge_audio_video(self) -> None:
         """Merge audio and video files into a single MP4 file using subprocess and ffmpeg CLI."""
@@ -181,7 +221,9 @@ class SecurityMonitor:
             )
 
             if result.returncode != 0:
-                print(f"[ERROR] ffmpeg failed: {result.stderr}")
+                error_msg = f"ffmpeg failed: {result.stderr}"
+                print(f"[ERROR] {error_msg}")
+                self.notify_error(result.stderr, context="_merge_audio_video")
                 raise RuntimeError("ffmpeg merge failed")
 
             # Clean up temporary files
@@ -193,7 +235,9 @@ class SecurityMonitor:
             print(f"[INFO] Created combined recording: {self.final_path}")
 
         except Exception as e:
-            print(f"[ERROR] Failed to merge audio and video: {e}")
+            error_msg = f"Failed to merge audio and video: {e}"
+            print(f"[ERROR] {error_msg}")
+            self.notify_error(str(e), context="_merge_audio_video")
             # If merging fails, keep the original files
             if os.path.exists(self.video_path):
                 os.rename(self.video_path, self.final_path.replace(".mp4", ".avi"))
@@ -219,7 +263,9 @@ class SecurityMonitor:
             time.sleep(wait_interval)
             waited += wait_interval
             if waited >= max_wait_time:
-                print("[ERROR] Could not open webcam after waiting for permission.")
+                error_msg = "Could not open webcam after waiting for permission."
+                print(f"[ERROR] {error_msg}")
+                self.notify_error(error_msg, context="motion_detector: webcam access")
                 return
 
         time.sleep(2)
@@ -232,7 +278,9 @@ class SecurityMonitor:
         while self.running:
             ret, frame = self.cap.read()
             if not ret:
-                print("[ERROR] Could not read frame")
+                error_msg = "Could not read frame"
+                print(f"[ERROR] {error_msg}")
+                self.notify_error(error_msg, context="motion_detector: read frame")
                 break
 
             frame = imutils.resize(frame, width=500)
@@ -283,6 +331,7 @@ class SecurityMonitor:
                     else:
                         video_path = f"recording_{timestamp}.avi"
                         final_path = video_path
+                        audio_path = ""  # Initialize to avoid unbound error
 
                     snapshot_path = f"snapshot_{timestamp}.jpg"
 
@@ -353,12 +402,15 @@ class SecurityMonitor:
                     motion_timer = None
 
             # Show preview with status
-            status_text = (
-                "MONITORING ACTIVE"
-                if self.is_monitoring_hours()
-                else "MONITORING INACTIVE"
-            )
-            color = (0, 255, 0) if self.is_monitoring_hours() else (0, 0, 255)
+            if self.config.force_monitoring:
+                status_text = "MONITORING FORCED ON"
+                color = (0, 255, 255)  # Cyan for forced mode
+            elif self.is_monitoring_hours():
+                status_text = "MONITORING ACTIVE"
+                color = (0, 255, 0)  # Green for active
+            else:
+                status_text = "MONITORING INACTIVE"
+                color = (0, 0, 255)  # Red for inactive
 
             cv2.putText(
                 frame,
@@ -397,6 +449,10 @@ class SecurityMonitor:
         print("[INFO] Starting security monitoring...")
         self.running = True
 
+        # Start Telegram bot handler
+        self.telegram_bot = TelegramBotHandler(self.config)
+        self.telegram_bot.start_polling()
+
         # Start cleanup scheduler in background
         self.cleaner_thread = threading.Thread(
             target=self.clean_old_files_scheduler, daemon=True
@@ -421,6 +477,10 @@ class SecurityMonitor:
 
         print("[INFO] Stopping security monitoring...")
         self.running = False
+
+        # Stop Telegram bot handler
+        if self.telegram_bot:
+            self.telegram_bot.stop_polling()
 
         if self.out is not None:
             self.out.release()

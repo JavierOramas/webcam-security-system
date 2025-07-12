@@ -21,6 +21,8 @@ class Config:
     motion_threshold: int = 25 
     recording_fps: float = 20.0
     cleanup_days: int = 3
+    force_monitoring: bool = False  # Force monitoring regardless of time
+    device_identifier: Optional[str] = None  # Custom identifier for media messages
 
     @classmethod
     def load(cls) -> "Config":

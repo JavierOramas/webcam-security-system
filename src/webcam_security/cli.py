@@ -6,9 +6,11 @@ from rich.panel import Panel
 from rich.text import Text
 from pathlib import Path
 import sys
+import socket
 
 from .config import Config
 from .core import SecurityMonitor
+from .updater import SelfUpdater
 
 app = typer.Typer(
     name="webcam-security",
@@ -25,6 +27,12 @@ def init(
     topic_id: str = typer.Option(
         None, "--topic-id", help="Telegram topic ID (optional)"
     ),
+    device_identifier: str = typer.Option(
+        None,
+        "--device-id",
+        "-d",
+        help="Custom device identifier (optional, defaults to hostname)",
+    ),
 ) -> None:
     """Initialize the webcam security configuration."""
     try:
@@ -32,6 +40,7 @@ def init(
             bot_token=bot_token,
             chat_id=chat_id,
             topic_id=topic_id,
+            device_identifier=device_identifier,
         )
         config.save()
 
@@ -90,6 +99,8 @@ def start() -> None:
         console.print(f"• Chat ID: {config.chat_id}")
         if config.topic_id:
             console.print(f"• Topic ID: {config.topic_id}")
+        device_id = config.device_identifier or socket.gethostname()
+        console.print(f"• Device ID: {device_id}")
 
         console.print("\n[bold]Controls:[/bold]")
         console.print("• Press 'q' in the preview window to stop monitoring")
@@ -143,6 +154,8 @@ def status() -> None:
         console.print(
             f"[bold]Topic ID:[/bold] {'✅ Set' if config.topic_id else '❌ Not set'}"
         )
+        device_id = config.device_identifier or socket.gethostname()
+        console.print(f"[bold]Device ID:[/bold] {device_id}")
         console.print(
             f"[bold]Monitoring hours:[/bold] {config.monitoring_start_hour}:00 - {config.monitoring_end_hour}:00"
         )
@@ -186,6 +199,44 @@ def clean() -> None:
         sys.exit(1)
     except Exception as e:
         console.print(f"[red]Error during cleanup: {e}[/red]")
+        sys.exit(1)
+
+
+@app.command()
+def update() -> None:
+    """Check for and install updates."""
+    try:
+        console.print("[yellow]Checking for updates...[/yellow]")
+
+        has_update, current_version, latest_version = SelfUpdater.check_for_updates()
+
+        if has_update:
+            console.print(
+                f"[blue]Update available: {current_version} → {latest_version}[/blue]"
+            )
+
+            # Ask for confirmation
+            if typer.confirm("Do you want to install the update?"):
+                console.print("[yellow]Installing update...[/yellow]")
+                if SelfUpdater.update_package():
+                    console.print("[green]✅ Update installed successfully![/green]")
+                    console.print("[yellow]Restarting to apply changes...[/yellow]")
+                    SelfUpdater.restart_application()
+                else:
+                    console.print("[red]❌ Update failed![/red]")
+                    sys.exit(1)
+            else:
+                console.print("[yellow]Update cancelled by user[/yellow]")
+        elif latest_version == "unknown":
+            console.print("[red]❌ Could not check for updates[/red]")
+            sys.exit(1)
+        else:
+            console.print(
+                f"[green]✅ Already up to date (version {current_version})[/green]"
+            )
+
+    except Exception as e:
+        console.print(f"[red]Error during update check: {e}[/red]")
         sys.exit(1)
 
 

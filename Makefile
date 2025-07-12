@@ -102,11 +102,7 @@ audit:
 	@pip install safety
 	@safety check
 
-# Generate documentation
-docs:
-	@echo "📚 Generating documentation..."
-	@pip install pdoc
-	@pdoc --html src/webcam_security --output-dir docs
+
 
 # Install pre-commit hooks
 hooks:
