@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-import pkg_resources
 import requests
 from typing import Optional, Tuple
 import os
@@ -18,8 +17,19 @@ class SelfUpdater:
     def get_current_version(cls) -> str:
         """Get current installed version."""
         try:
-            return pkg_resources.get_distribution(cls.PACKAGE_NAME).version
-        except pkg_resources.DistributionNotFound:
+            # Try importlib.metadata first (Python 3.8+)
+            import importlib.metadata
+
+            return importlib.metadata.version(cls.PACKAGE_NAME)
+        except ImportError:
+            try:
+                # Fallback to pkg_resources
+                import pkg_resources
+
+                return pkg_resources.get_distribution(cls.PACKAGE_NAME).version
+            except ImportError:
+                return "unknown"
+        except Exception:
             return "unknown"
 
     @classmethod
