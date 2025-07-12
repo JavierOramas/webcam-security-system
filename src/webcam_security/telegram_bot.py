@@ -139,6 +139,7 @@ Monitoring: {self.config.monitoring_start_hour}:00 - {self.config.monitoring_end
 📊 <b>Status Report</b>
 
 Device: <code>{device_id}</code>
+Version: <code>{SelfUpdater.get_current_version()}</code>
 Status: {status}
 Current Time: {datetime.now().strftime("%H:%M:%S")}
 
