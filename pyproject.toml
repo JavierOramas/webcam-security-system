@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.8.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "webcam-security"
-version = "0.1.0"
+version = "0.1.1"
 description = "A webcam security monitoring system with Telegram notifications"
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,14 +32,22 @@ dependencies = [
     "sounddevice>=0.4.0",
     "soundfile>=0.12.0",
     "ffmpeg-python>=0.2.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
     "black>=22.0.0",
-    "flake8>=5.0.0",
+    "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
 ]
 
 [project.scripts]
@@ -50,15 +58,49 @@ Homepage = "https://github.com/yourusername/webcam-security"
 Repository = "https://github.com/yourusername/webcam-security"
 Issues = "https://github.com/yourusername/webcam-security/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/webcam_security"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "tests/",
+    "README.md",
+    "LICENSE",
+    "MANIFEST.in",
+    "pyproject.toml",
+]
 
 [tool.black]
 line-length = 88
 target-version = ['py38']
 
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = ["E", "F", "I", "N", "W", "B", "C4", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true 
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src/webcam_security",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+] 
