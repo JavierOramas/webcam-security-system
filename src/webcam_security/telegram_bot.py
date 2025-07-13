@@ -276,7 +276,7 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 has_update, current_version, latest_version = (
                     SelfUpdater.check_for_updates()
                 )
-                while has_update:
+                while current_version != latest_version:
                     time.sleep(10)
                     has_update, current_version, latest_version = (
                         SelfUpdater.check_for_updates()
