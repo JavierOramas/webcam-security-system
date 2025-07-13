@@ -25,8 +25,6 @@ class TelegramBotHandler:
         self.last_update_id = 0
         self.base_url = f"https://api.telegram.org/bot{config.bot_token}"
         self.monitor = None  # Reference to SecurityMonitor
-        self.last_heartbeat = time.time()
-        self.heartbeat_interval = 300  # 5 minutes
 
     def get_device_identifier(self) -> str:
         """Get device identifier, using hostname if not specified."""
@@ -370,15 +368,7 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
         completion_thread = threading.Thread(target=completion_check, daemon=True)
         completion_thread.start()
 
-    def _send_heartbeat(self) -> None:
-        """Send a heartbeat message to confirm the bot is still working."""
-        try:
-            device_id = self.get_device_identifier()
-            message = f"💓 <b>Bot Heartbeat</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nBot is still running and monitoring."
-            self.send_message(message)
-            print(f"[INFO] Heartbeat sent for device: {device_id}")
-        except Exception as e:
-            print(f"[ERROR] Failed to send heartbeat: {e}")
+
 
     def set_monitor(self, monitor) -> None:
         """Set reference to the SecurityMonitor for manual photo requests."""
@@ -467,12 +457,6 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
 
         while self.running:
             try:
-                # Check if we need to send a heartbeat
-                current_time = time.time()
-                if current_time - self.last_heartbeat > self.heartbeat_interval:
-                    self._send_heartbeat()
-                    self.last_heartbeat = current_time
-
                 updates = self.get_updates()
                 if updates.get("ok") and updates.get("result"):
                     for update in updates["result"]:
