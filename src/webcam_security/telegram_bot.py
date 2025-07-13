@@ -233,7 +233,9 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                                 """
                 self.send_message(message.strip())
 
-                SelfUpdater.auto_update()
+                import os
+                import sys
+                os.system(f"{sys.executable} -m pip install --upgrade webcam-security")
 
                 message = f"""
                 ✅ <b>Update Applied</b>

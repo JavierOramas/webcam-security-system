@@ -240,5 +240,31 @@ def update() -> None:
         sys.exit(1)
 
 
+@app.command()
+def debug_update() -> None:
+    """Debug the update mechanism."""
+    try:
+        console.print("[yellow]Debugging update mechanism...[/yellow]")
+        SelfUpdater.debug_info()
+    except Exception as e:
+        console.print(f"[red]Error during debug: {e}[/red]")
+        sys.exit(1)
+
+
+@app.command()
+def self_update() -> None:
+    """Automatically update the package to the latest version and restart."""
+    try:
+        console.print(
+            "[yellow]Checking for updates and auto-updating if available...[/yellow]"
+        )
+        updated = SelfUpdater.auto_update()
+        if not updated:
+            console.print("[green]Already up to date or update failed.[/green]")
+    except Exception as e:
+        console.print(f"[red]Error during self-update: {e}[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     app()

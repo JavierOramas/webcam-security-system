@@ -13,13 +13,13 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="webcam-security",
-    version="0.1.1",
-    author="Your Name",
-    author_email="your.email@example.com",
+    version="0.3.3",
+    author="Javier Oramas",
+    author_email="javiale2000@gmail.com",
     description="A webcam security monitoring system with Telegram notifications",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/webcam-security",
+    url="https://github.com/JavierOramas/webcam-security",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[

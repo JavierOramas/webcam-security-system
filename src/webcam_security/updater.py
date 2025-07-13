@@ -28,9 +28,19 @@ class SelfUpdater:
 
                 return pkg_resources.get_distribution(cls.PACKAGE_NAME).version
             except ImportError:
-                return "unknown"
+                pass
         except Exception:
-            return "unknown"
+            pass
+
+        # If all else fails, try to get version from the package itself
+        try:
+            from webcam_security import __version__
+
+            return __version__
+        except ImportError:
+            pass
+
+        return "unknown"
 
     @classmethod
     def get_latest_version(cls) -> Optional[str]:
@@ -38,9 +48,17 @@ class SelfUpdater:
         try:
             response = requests.get(cls.PYPI_URL, timeout=10)
             if response.status_code == 200:
-                return response.json()["info"]["version"]
-            return None
-        except Exception:
+                data = response.json()
+                if "info" in data and "version" in data["info"]:
+                    return data["info"]["version"]
+                else:
+                    print(f"[DEBUG] Unexpected PyPI response format: {data}")
+                    return None
+            else:
+                print(f"[DEBUG] PyPI request failed with status {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[DEBUG] Failed to get latest version: {e}")
             return None
 
     @classmethod
@@ -52,7 +70,21 @@ class SelfUpdater:
         if latest_version is None:
             return False, current_version, "unknown"
 
-        return latest_version > current_version, current_version, latest_version
+        if current_version == "unknown":
+            return False, current_version, latest_version
+
+        # Compare versions properly
+        try:
+            from packaging import version as pkg_version
+
+            has_update = pkg_version.parse(latest_version) > pkg_version.parse(
+                current_version
+            )
+        except ImportError:
+            # Fallback to string comparison if packaging is not available
+            has_update = latest_version > current_version
+
+        return has_update, current_version, latest_version
 
     @classmethod
     def update_package(cls) -> bool:
@@ -88,6 +120,29 @@ class SelfUpdater:
         """Restart the application after update."""
         print("[INFO] Restarting application after update...")
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    @classmethod
+    def debug_info(cls) -> None:
+        """Print debug information about the updater."""
+        current_version = cls.get_current_version()
+        latest_version = cls.get_latest_version()
+
+        print(f"[DEBUG] Package name: {cls.PACKAGE_NAME}")
+        print(f"[DEBUG] PyPI URL: {cls.PYPI_URL}")
+        print(f"[DEBUG] Current version: {current_version}")
+        print(f"[DEBUG] Latest version: {latest_version}")
+
+        if latest_version:
+            try:
+                from packaging import version as pkg_version
+
+                has_update = pkg_version.parse(latest_version) > pkg_version.parse(
+                    current_version
+                )
+                print(f"[DEBUG] Has update: {has_update}")
+            except ImportError:
+                has_update = latest_version > current_version
+                print(f"[DEBUG] Has update (string comparison): {has_update}")
 
     @classmethod
     def auto_update(cls) -> bool:
