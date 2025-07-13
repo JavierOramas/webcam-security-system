@@ -290,6 +290,7 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 Latest Version: <code>{latest_version}</code>
                 """
                 self.send_message(message.strip())
+                return
 
             elif latest_version == "unknown":
                 message = f"""
