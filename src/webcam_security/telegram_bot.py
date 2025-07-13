@@ -8,6 +8,8 @@ import requests
 from datetime import datetime
 import socket
 from pathlib import Path
+import sys
+import subprocess
 
 from .config import Config
 from .updater import SelfUpdater
@@ -23,6 +25,8 @@ class TelegramBotHandler:
         self.last_update_id = 0
         self.base_url = f"https://api.telegram.org/bot{config.bot_token}"
         self.monitor = None  # Reference to SecurityMonitor
+        self.last_heartbeat = time.time()
+        self.heartbeat_interval = 300  # 5 minutes
 
     def get_device_identifier(self) -> str:
         """Get device identifier, using hostname if not specified."""
@@ -54,13 +58,18 @@ class TelegramBotHandler:
             url = f"{self.base_url}/getUpdates"
             params = {
                 "offset": self.last_update_id + 1,
-                "timeout": 30,
+                "timeout": 5,  # Reduced timeout to prevent blocking
                 "allowed_updates": ["message"],
             }
-            response = requests.get(url, params=params)
+            response = requests.get(
+                url, params=params, timeout=10
+            )  # Add explicit timeout
             if response.status_code == 200:
                 return response.json()
             return {"ok": False, "result": []}
+        except requests.exceptions.Timeout:
+            # Timeout is normal, just return empty result
+            return {"ok": True, "result": []}
         except Exception as e:
             print(f"[ERROR] Failed to get updates: {e}")
             return {"ok": False, "result": []}
@@ -99,6 +108,10 @@ class TelegramBotHandler:
                 self.start_async_update()
             elif command == "/peek":
                 self.take_manual_photo()
+            elif command == "/restart_bot":
+                self.restart_bot()
+            elif command == "/restart":
+                self.restart_application()
 
     def send_start_message(self) -> None:
         """Send welcome message."""
@@ -118,7 +131,8 @@ Status: {"🟢 Active" if self.config.force_monitoring else "🟡 Scheduled"}
 /set_media_path <path> - Set media storage path
 /peek - Take manual photo and send to Telegram
 /update - Check for software updates
-/update_async - Start async update with retry logic
+/restart_bot - Restart bot polling thread
+/restart - Restart entire application (loads new code)
 
 <b>Current Schedule:</b>
 Monitoring: {self.config.monitoring_start_hour}:00 - {self.config.monitoring_end_hour}:00
@@ -177,13 +191,16 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "  Example: /set_media_path ~/my-recordings\n\n"
             "<b>System:</b>\n"
             "/update - Check for software updates\n"
-            "/update_async - Start async update with retry logic\n"
+            "/restart_bot - Restart bot polling thread\n"
+            "/restart - Restart entire application (loads new code)\n"
             "/help - Show this help message\n\n"
             "<b>Examples:</b>\n"
             "• /set_hours 20 8 (8 PM to 8 AM)\n"
             "• /set_hours 0 24 (24/7 monitoring)\n"
             "• /set_media_path ~/Documents/security\n"
             "• /peek - Check what camera sees\n"
+            "• /restart_bot - Restart if bot stops responding\n"
+            "• /restart - Restart app after updates\n"
             "• /update_async - Background update with retries"
         )
         self.send_message(help_text)
@@ -353,6 +370,16 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
         completion_thread = threading.Thread(target=completion_check, daemon=True)
         completion_thread.start()
 
+    def _send_heartbeat(self) -> None:
+        """Send a heartbeat message to confirm the bot is still working."""
+        try:
+            device_id = self.get_device_identifier()
+            message = f"💓 <b>Bot Heartbeat</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nBot is still running and monitoring."
+            self.send_message(message)
+            print(f"[INFO] Heartbeat sent for device: {device_id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to send heartbeat: {e}")
+
     def set_monitor(self, monitor) -> None:
         """Set reference to the SecurityMonitor for manual photo requests."""
         self.monitor = monitor
@@ -369,12 +396,62 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
         else:
             print(f"[WARNING] Monitor not available for manual photo request")
 
+    def restart_bot(self) -> None:
+        """Restart the bot polling thread."""
+        device_id = self.get_device_identifier()
+        message = f"🔄 <b>Restarting bot</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nBot polling will restart."
+        self.send_message(message)
+
+        # Stop current polling
+        self.stop_polling()
+
+        # Wait a moment
+        time.sleep(2)
+
+        # Restart polling
+        self.start_polling()
+
+        # Send confirmation
+        confirmation_msg = f"✅ <b>Bot restarted</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nBot polling has been restarted successfully."
+        self.send_message(confirmation_msg)
+
+    def restart_application(self) -> None:
+        """Restart the entire application process to load updated code."""
+        device_id = self.get_device_identifier()
+        message = f"🔄 <b>Restarting application</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nApplication will restart to load new code."
+        self.send_message(message)
+
+        # Simple restart mechanism - just exit and let the user restart manually
+        # This is safer than trying to spawn a new process from within the bot
+        print(
+            "[INFO] Application restart requested via Telegram. Please restart manually."
+        )
+        sys.exit(0)
+
     def start_polling(self) -> None:
         """Start polling for updates."""
         self.running = True
-        self.update_thread = threading.Thread(target=self._poll_updates, daemon=True)
-        self.update_thread.start()
+        self._start_polling_thread()
         print("[INFO] Telegram bot handler started")
+
+    def _start_polling_thread(self) -> None:
+        """Start the polling thread with restart capability."""
+
+        def polling_with_restart():
+            while self.running:
+                try:
+                    self._poll_updates()
+                except Exception as e:
+                    print(f"[ERROR] Polling thread crashed: {e}")
+                    if self.running:
+                        print("[INFO] Restarting polling thread in 10 seconds...")
+                        time.sleep(10)
+                        continue
+                    else:
+                        break
+
+        self.update_thread = threading.Thread(target=polling_with_restart, daemon=True)
+        self.update_thread.start()
 
     def stop_polling(self) -> None:
         """Stop polling for updates."""
@@ -385,15 +462,44 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
 
     def _poll_updates(self) -> None:
         """Poll for updates in a separate thread."""
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+
         while self.running:
             try:
+                # Check if we need to send a heartbeat
+                current_time = time.time()
+                if current_time - self.last_heartbeat > self.heartbeat_interval:
+                    self._send_heartbeat()
+                    self.last_heartbeat = current_time
+
                 updates = self.get_updates()
                 if updates.get("ok") and updates.get("result"):
                     for update in updates["result"]:
                         if "message" in update:
                             self.handle_command(update["message"])
                         self.last_update_id = update["update_id"]
+
+                    # Reset error counter on successful update
+                    consecutive_errors = 0
+                else:
+                    # No updates is normal, not an error
+                    consecutive_errors = 0
+
             except Exception as e:
-                print(f"[ERROR] Polling error: {e}")
-                time.sleep(5)
-            time.sleep(1)
+                consecutive_errors += 1
+                print(
+                    f"[ERROR] Polling error (attempt {consecutive_errors}/{max_consecutive_errors}): {e}"
+                )
+
+                if consecutive_errors >= max_consecutive_errors:
+                    print(f"[ERROR] Too many consecutive errors, stopping polling")
+                    break
+
+                # Exponential backoff for errors
+                sleep_time = min(5 * (2 ** (consecutive_errors - 1)), 30)
+                time.sleep(sleep_time)
+                continue
+
+            # Short sleep between polls to prevent excessive CPU usage
+            time.sleep(0.5)

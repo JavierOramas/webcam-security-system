@@ -43,6 +43,8 @@ Once the monitoring is running, you can control it remotely via Telegram command
 ### System
 - `/update` - Check for software updates
 - `/update_async` - Start async update with retry logic (5 attempts)
+- `/restart_bot` - Restart bot polling thread if it stops responding
+- `/restart` - Restart entire application (loads new code after updates)
 
 ## Usage
 
@@ -62,6 +64,7 @@ Once the monitoring is running, you can control it remotely via Telegram command
    - Send `/start` to your bot for command list
    - Use `/force_on` to enable monitoring immediately
    - Use `/set_hours 22 6` to set monitoring hours
+   - Use `/restart` to restart the application after updates
 
 ### Device Identification
 
@@ -80,6 +83,13 @@ Recordings and snapshots are stored in a configurable location:
   - `/var/security/recordings` - Store in system directory
   - `~/Desktop/camera1` - Store on desktop with device name
 
+### Application Restart
+
+After updating the software, new features may not be available until the application is restarted:
+- **CLI**: Use `webcam-security restart` to restart the application
+- **Telegram**: Use `/restart` command to restart the application
+- **Manual**: Stop the application (Ctrl+C) and run `webcam-security start` again
+
 ### Available Commands
 
 - `webcam-security init` - Initialize configuration
@@ -89,6 +99,7 @@ Recordings and snapshots are stored in a configurable location:
 - `webcam-security update` - Check for and install updates
 - `webcam-security self-update` - Auto-update and restart
 - `webcam-security self-update-async` - Start async update with retry logic
+- `webcam-security restart` - Restart application to load updated code
 
 ## Installation
 

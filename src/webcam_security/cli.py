@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import socket
 import time
+import subprocess
 
 from .config import Config
 from .core import SecurityMonitor
@@ -280,25 +281,74 @@ def self_update() -> None:
 
 @app.command()
 def self_update_async() -> None:
-    """Start an asynchronous update process with retry logic."""
+    """Start an asynchronous self-update with retry logic."""
     try:
-        console.print("[yellow]Starting async update with retry logic...[/yellow]")
         console.print(
-            "[blue]Update will run in background. Check status after completion.[/blue]"
+            Panel(
+                Text("🔄 Starting async update...", style="yellow"),
+                title="[bold blue]Webcam Security[/bold blue]",
+                border_style="yellow",
+            )
         )
 
-        # Start update in background thread
+        # Start the async update
         update_thread = SelfUpdater.auto_update_async()
 
-        # Wait a moment to show it started
-        time.sleep(2)
-        console.print("[green]✅ Async update started successfully![/green]")
+        console.print("[green]✅ Async update started in background[/green]")
         console.print(
-            "[yellow]The update will continue in the background with up to 5 retry attempts.[/yellow]"
+            "[yellow]The update will run with retry logic and notify you when complete.[/yellow]"
+        )
+        console.print(
+            "[yellow]You can continue using the application while it updates.[/yellow]"
         )
 
     except Exception as e:
         console.print(f"[red]Error starting async update: {e}[/red]")
+        sys.exit(1)
+
+
+@app.command()
+def restart() -> None:
+    """Restart the application to load updated code."""
+    try:
+        console.print(
+            Panel(
+                Text("🔄 Restarting application...", style="yellow"),
+                title="[bold blue]Webcam Security[/bold blue]",
+                border_style="yellow",
+            )
+        )
+
+        # Get the current process arguments
+        import os
+
+        # Get the command that was used to start this process
+        cmd = sys.argv.copy()
+
+        # If we're running as a module, reconstruct the command
+        if cmd[0].endswith("__main__.py"):
+            # We're running as python -m webcam_security
+            cmd = [sys.executable, "-m", "webcam_security"] + cmd[1:]
+        elif "webcam-security" in cmd[0]:
+            # We're running as webcam-security command
+            pass
+        else:
+            # Fallback to python -m webcam_security start
+            cmd = [sys.executable, "-m", "webcam_security", "start"]
+
+        console.print(f"[yellow]Restarting with command: {' '.join(cmd)}[/yellow]")
+
+        # Start the new process
+        subprocess.Popen(cmd)
+
+        # Exit the current process
+        console.print(
+            "[green]✅ New process started. Exiting current process...[/green]"
+        )
+        sys.exit(0)
+
+    except Exception as e:
+        console.print(f"[red]Error restarting application: {e}[/red]")
         sys.exit(1)
 
 
