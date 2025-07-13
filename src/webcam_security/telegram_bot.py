@@ -237,6 +237,12 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 import sys
                 os.system(f"{sys.executable} -m pip install --upgrade webcam-security")
 
+
+                has_update, current_version, latest_version = SelfUpdater.check_for_updates()
+                while has_update:
+                    time.sleep(10)
+                    has_update, current_version, latest_version = SelfUpdater.check_for_updates()
+
                 message = f"""
                 ✅ <b>Update Applied</b>
 
