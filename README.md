@@ -1,8 +1,6 @@
 # Webcam Security
 
 [![PyPI version](https://img.shields.io/pypi/v/webcam-security.svg?style=flat-square)](https://pypi.org/project/webcam-security/)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/yourusername/webcam-security/ci.yml?branch=main&style=flat-square)](https://github.com/yourusername/webcam-security/actions)
-[![License](https://img.shields.io/github/license/yourusername/webcam-security?style=flat-square)](LICENSE)
 [![Python Versions](https://img.shields.io/pypi/pyversions/webcam-security.svg?style=flat-square)](https://pypi.org/project/webcam-security/)
 [![Downloads](https://img.shields.io/pypi/dm/webcam-security?style=flat-square)](https://pypi.org/project/webcam-security/)
 
