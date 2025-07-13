@@ -41,6 +41,7 @@ Once the monitoring is running, you can control it remotely via Telegram command
 
 ### System
 - `/update` - Check for software updates
+- `/update_async` - Start async update with retry logic (5 attempts)
 
 ## Usage
 
@@ -85,6 +86,8 @@ Recordings and snapshots are stored in a configurable location:
 - `webcam-security status` - Show current configuration
 - `webcam-security clean` - Manually clean old recordings
 - `webcam-security update` - Check for and install updates
+- `webcam-security self-update` - Auto-update and restart
+- `webcam-security self-update-async` - Start async update with retry logic
 
 ## Installation
 

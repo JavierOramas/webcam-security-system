@@ -5,6 +5,8 @@ import sys
 import requests
 from typing import Optional, Tuple
 import os
+import threading
+import time
 
 
 class SelfUpdater:
@@ -12,6 +14,8 @@ class SelfUpdater:
 
     PACKAGE_NAME = "webcam-security"
     PYPI_URL = "https://pypi.org/pypi/webcam-security/json"
+    MAX_RETRIES = 5
+    RETRY_DELAY = 10  # seconds between retries
 
     @classmethod
     def get_current_version(cls) -> str:
@@ -88,32 +92,47 @@ class SelfUpdater:
 
     @classmethod
     def update_package(cls) -> bool:
-        """Update the package to the latest version."""
-        try:
-            # Use pip to upgrade the package
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--upgrade",
-                    cls.PACKAGE_NAME,
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+        """Update the package to the latest version with retry logic."""
+        for attempt in range(cls.MAX_RETRIES):
+            try:
+                print(f"[INFO] Update attempt {attempt + 1}/{cls.MAX_RETRIES}")
 
-            print(f"[INFO] Update successful: {result.stdout}")
-            return True
+                # Use pip to upgrade the package
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--upgrade",
+                        cls.PACKAGE_NAME,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
 
-        except subprocess.CalledProcessError as e:
-            print(f"[ERROR] Update failed: {e.stderr}")
-            return False
-        except Exception as e:
-            print(f"[ERROR] Update failed: {e}")
-            return False
+                print(f"[INFO] Update successful: {result.stdout}")
+                return True
+
+            except subprocess.CalledProcessError as e:
+                print(f"[ERROR] Update attempt {attempt + 1} failed: {e.stderr}")
+                if attempt < cls.MAX_RETRIES - 1:
+                    print(f"[INFO] Retrying in {cls.RETRY_DELAY} seconds...")
+                    time.sleep(cls.RETRY_DELAY)
+                else:
+                    print(f"[ERROR] All {cls.MAX_RETRIES} update attempts failed")
+                    return False
+            except Exception as e:
+                print(f"[ERROR] Update attempt {attempt + 1} failed: {e}")
+                if attempt < cls.MAX_RETRIES - 1:
+                    print(f"[INFO] Retrying in {cls.RETRY_DELAY} seconds...")
+                    time.sleep(cls.RETRY_DELAY)
+                else:
+                    print(f"[ERROR] All {cls.MAX_RETRIES} update attempts failed")
+                    return False
+
+        return False
 
     @classmethod
     def restart_application(cls) -> None:
@@ -160,7 +179,7 @@ class SelfUpdater:
                     cls.restart_application()
                     return True
                 else:
-                    print("[ERROR] Failed to install update")
+                    print("[ERROR] Failed to install update after all retries")
                     return False
             else:
                 print(f"[INFO] Already up to date (version {current_version})")
@@ -169,3 +188,17 @@ class SelfUpdater:
         except Exception as e:
             print(f"[ERROR] Auto-update failed: {e}")
             return False
+
+    @classmethod
+    def auto_update_async(cls) -> threading.Thread:
+        """Start auto-update in a separate thread."""
+
+        def update_thread():
+            try:
+                cls.auto_update()
+            except Exception as e:
+                print(f"[ERROR] Async update thread failed: {e}")
+
+        thread = threading.Thread(target=update_thread, daemon=True)
+        thread.start()
+        return thread

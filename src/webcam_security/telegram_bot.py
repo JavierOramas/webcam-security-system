@@ -95,7 +95,7 @@ class TelegramBotHandler:
             elif command == "/set_media_path":
                 self.set_media_storage_path(args)
             elif command == "/update":
-                self.check_for_updates()
+                self.start_async_update()
 
     def send_start_message(self) -> None:
         """Send welcome message."""
@@ -114,6 +114,7 @@ Status: {"🟢 Active" if self.config.force_monitoring else "🟡 Scheduled"}
 /set_hours <start> <end> - Set monitoring hours (24h format)
 /set_media_path <path> - Set media storage path
 /update - Check for software updates
+/update_async - Start async update with retry logic
 
 <b>Current Schedule:</b>
 Monitoring: {self.config.monitoring_start_hour}:00 - {self.config.monitoring_end_hour}:00
@@ -171,11 +172,13 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "  Example: /set_media_path ~/my-recordings\n\n"
             "<b>System:</b>\n"
             "/update - Check for software updates\n"
+            "/update_async - Start async update with retry logic\n"
             "/help - Show this help message\n\n"
             "<b>Examples:</b>\n"
             "• /set_hours 20 8 (8 PM to 8 AM)\n"
             "• /set_hours 0 24 (24/7 monitoring)\n"
-            "• /set_media_path ~/Documents/security"
+            "• /set_media_path ~/Documents/security\n"
+            "• /update_async - Background update with retries"
         )
         self.send_message(help_text)
 
@@ -313,6 +316,36 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
 
         except Exception as e:
             self.send_message(f"❌ <b>Update check failed:</b> {str(e)}")
+
+    def start_async_update(self) -> None:
+        """Start an asynchronous update process."""
+        device_id = self.get_device_identifier()
+        message = f"🔄 <b>Starting async update</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nUpdate will run in background with retry logic."
+        self.send_message(message)
+
+        # Start update in background thread
+        update_thread = SelfUpdater.auto_update_async()
+
+        # Send completion message after a delay
+        def completion_check():
+            time.sleep(30)  # Wait for update to complete
+            try:
+                has_update, current_version, latest_version = (
+                    SelfUpdater.check_for_updates()
+                )
+                if not has_update and current_version != "unknown":
+                    completion_msg = f"✅ <b>Update completed</b>\n\nDevice: <code>{device_id}</code>\nCurrent Version: <code>{current_version}</code>\n\nUpdate process finished."
+                    self.send_message(completion_msg)
+                else:
+                    completion_msg = f"⚠️ <b>Update status unclear</b>\n\nDevice: <code>{device_id}</code>\nCurrent Version: <code>{current_version}</code>\n\nPlease check manually."
+                    self.send_message(completion_msg)
+            except Exception as e:
+                error_msg = f"❌ <b>Update status check failed</b>\n\nDevice: <code>{device_id}</code>\nError: {str(e)}"
+                self.send_message(error_msg)
+
+        # Start completion check in background
+        completion_thread = threading.Thread(target=completion_check, daemon=True)
+        completion_thread.start()
 
     def start_polling(self) -> None:
         """Start polling for updates."""

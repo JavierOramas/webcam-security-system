@@ -7,6 +7,7 @@ from rich.text import Text
 from pathlib import Path
 import sys
 import socket
+import time
 
 from .config import Config
 from .core import SecurityMonitor
@@ -274,6 +275,30 @@ def self_update() -> None:
             console.print("[green]Already up to date or update failed.[/green]")
     except Exception as e:
         console.print(f"[red]Error during self-update: {e}[/red]")
+        sys.exit(1)
+
+
+@app.command()
+def self_update_async() -> None:
+    """Start an asynchronous update process with retry logic."""
+    try:
+        console.print("[yellow]Starting async update with retry logic...[/yellow]")
+        console.print(
+            "[blue]Update will run in background. Check status after completion.[/blue]"
+        )
+
+        # Start update in background thread
+        update_thread = SelfUpdater.auto_update_async()
+
+        # Wait a moment to show it started
+        time.sleep(2)
+        console.print("[green]✅ Async update started successfully![/green]")
+        console.print(
+            "[yellow]The update will continue in the background with up to 5 retry attempts.[/yellow]"
+        )
+
+    except Exception as e:
+        console.print(f"[red]Error starting async update: {e}[/red]")
         sys.exit(1)
 
 
