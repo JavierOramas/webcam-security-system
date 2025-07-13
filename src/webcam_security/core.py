@@ -56,6 +56,7 @@ class SecurityMonitor:
         self.audio_recording = False
         self.audio_thread: Optional[threading.Thread] = None
         self.telegram_bot: Optional[TelegramBotHandler] = None
+        self._manual_photo_requested = False
 
     def is_monitoring_hours(self) -> bool:
         """Check if current time is between monitoring hours."""
@@ -77,6 +78,10 @@ class SecurityMonitor:
         if self.config.device_identifier:
             return self.config.device_identifier
         return socket.gethostname()
+
+    def request_manual_photo(self) -> None:
+        """Request a manual photo to be taken and sent."""
+        self._manual_photo_requested = True
 
     def notify_error(self, error_msg: str, context: str = "") -> None:
         """Send an error notification to Telegram chat with device identifier."""
@@ -325,7 +330,7 @@ class SecurityMonitor:
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                     media_dir = self.config.get_media_storage_path()
-                    
+
                     if AUDIO_AVAILABLE and FFMPEG_AVAILABLE:
                         video_path = str(media_dir / f"temp_video_{timestamp}.avi")
                         audio_path = str(media_dir / f"temp_audio_{timestamp}.wav")
@@ -424,6 +429,11 @@ class SecurityMonitor:
                 2,
             )
 
+            # Check for manual photo request
+            if self._manual_photo_requested:
+                self._manual_photo_requested = False
+                self._take_and_send_manual_photo(frame)
+
             cv2.imshow("Security Feed", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -442,6 +452,29 @@ class SecurityMonitor:
             self.cap.release()
         cv2.destroyAllWindows()
 
+    def _take_and_send_manual_photo(self, frame) -> None:
+        """Take a manual photo and send it to Telegram."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            media_dir = self.config.get_media_storage_path()
+            snapshot_path = str(media_dir / f"manual_peek_{timestamp}.jpg")
+
+            # Save the frame
+            cv2.imwrite(snapshot_path, frame)
+
+            # Send to Telegram
+            self.send_telegram_photo(snapshot_path, "👁️ Manual peek requested!")
+
+            # Clean up the file
+            os.remove(snapshot_path)
+
+            print(f"[INFO] Manual photo taken and sent: {snapshot_path}")
+
+        except Exception as e:
+            error_msg = f"Failed to take manual photo: {e}"
+            print(f"[ERROR] {error_msg}")
+            self.notify_error(str(e), context="_take_and_send_manual_photo")
+
     def start(self) -> None:
         """Start the security monitoring."""
         if self.running:
@@ -454,6 +487,9 @@ class SecurityMonitor:
         # Start Telegram bot handler
         self.telegram_bot = TelegramBotHandler(self.config)
         self.telegram_bot.start_polling()
+
+        # Connect the bot handler to this monitor for manual photo requests
+        self.telegram_bot.set_monitor(self)
 
         # Start cleanup scheduler in background
         self.cleaner_thread = threading.Thread(

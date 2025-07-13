@@ -13,7 +13,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="webcam-security",
-    version="0.3.`8",
+    version="0.3.10",
     author="Javier Oramas",
     author_email="javiale2000@gmail.com",
     description="A webcam security monitoring system with Telegram notifications",

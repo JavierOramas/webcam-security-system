@@ -22,6 +22,7 @@ class TelegramBotHandler:
         self.update_thread: Optional[threading.Thread] = None
         self.last_update_id = 0
         self.base_url = f"https://api.telegram.org/bot{config.bot_token}"
+        self.monitor = None  # Reference to SecurityMonitor
 
     def get_device_identifier(self) -> str:
         """Get device identifier, using hostname if not specified."""
@@ -96,6 +97,8 @@ class TelegramBotHandler:
                 self.set_media_storage_path(args)
             elif command == "/update":
                 self.start_async_update()
+            elif command == "/peek":
+                self.take_manual_photo()
 
     def send_start_message(self) -> None:
         """Send welcome message."""
@@ -113,6 +116,7 @@ Status: {"🟢 Active" if self.config.force_monitoring else "🟡 Scheduled"}
 /force_off - Force monitoring OFF (returns to schedule)
 /set_hours <start> <end> - Set monitoring hours (24h format)
 /set_media_path <path> - Set media storage path
+/peek - Take manual photo and send to Telegram
 /update - Check for software updates
 /update_async - Start async update with retry logic
 
@@ -164,7 +168,8 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "<b>Status & Control:</b>\n"
             "/status - Show current configuration and status\n"
             "/force_on - Force monitoring ON (ignores time schedule)\n"
-            "/force_off - Force monitoring OFF (returns to schedule)\n\n"
+            "/force_off - Force monitoring OFF (returns to schedule)\n"
+            "/peek - Take manual photo and send to Telegram\n\n"
             "<b>Configuration:</b>\n"
             "/set_hours &lt;start&gt; &lt;end&gt; - Set monitoring hours\n"
             "  Example: /set_hours 22 6 (10 PM to 6 AM)\n"
@@ -178,6 +183,7 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "• /set_hours 20 8 (8 PM to 8 AM)\n"
             "• /set_hours 0 24 (24/7 monitoring)\n"
             "• /set_media_path ~/Documents/security\n"
+            "• /peek - Check what camera sees\n"
             "• /update_async - Background update with retries"
         )
         self.send_message(help_text)
@@ -346,6 +352,22 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
         # Start completion check in background
         completion_thread = threading.Thread(target=completion_check, daemon=True)
         completion_thread.start()
+
+    def set_monitor(self, monitor) -> None:
+        """Set reference to the SecurityMonitor for manual photo requests."""
+        self.monitor = monitor
+
+    def take_manual_photo(self) -> None:
+        """Request a manual photo to be taken and sent."""
+        device_id = self.get_device_identifier()
+        message = f"👁️ <b>Manual peek requested</b>\n\nDevice: <code>{device_id}</code>\nTime: {datetime.now().strftime('%H:%M:%S')}\n\nTaking photo now..."
+        self.send_message(message)
+
+        # Request photo from the monitor if it's available
+        if self.monitor:
+            self.monitor.request_manual_photo()
+        else:
+            print(f"[WARNING] Monitor not available for manual photo request")
 
     def start_polling(self) -> None:
         """Start polling for updates."""

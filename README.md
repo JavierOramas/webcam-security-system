@@ -33,6 +33,7 @@ Once the monitoring is running, you can control it remotely via Telegram command
 - `/help` - Show detailed help and command reference
 - `/force_on` - Force monitoring ON (ignores time schedule)
 - `/force_off` - Force monitoring OFF (returns to normal schedule)
+- `/peek` - Take manual photo and send to Telegram
 
 ### Configuration
 - `/set_hours <start> <end>` - Set monitoring hours (24h format)

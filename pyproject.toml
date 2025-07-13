@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "webcam-security"
-version = "0.3.9"
+version = "0.3.10"
 description = "A webcam security monitoring system with Telegram notifications"
 readme = "README.md"
 license = {text = "MIT"}
@@ -55,9 +55,9 @@ test = [
 webcam-security = "webcam_security.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/JavierOramas/webcam-security"
-Repository = "https://github.com/JavierOramas/webcam-security"
-Issues = "https://github.com/JavierOramas/webcam-security/issues"
+Homepage = "https://github.com/JavierOramas/webcam"
+Repository = "https://github.com/JavierOramas/webcam"
+Issues = "https://github.com/JavierOramas/webcam/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
