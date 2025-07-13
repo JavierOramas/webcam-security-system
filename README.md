@@ -99,6 +99,3 @@ After updating the software, new features may not be available until the applica
 - `webcam-security self-update-async` - Start async update with retry logic
 - `webcam-security restart` - Restart application to load updated code
 
-## Installation
-
-### Using pip (traditional)
