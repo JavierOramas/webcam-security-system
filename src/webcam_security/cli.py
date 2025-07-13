@@ -33,6 +33,12 @@ def init(
         "-d",
         help="Custom device identifier (optional, defaults to hostname)",
     ),
+    media_storage_path: str = typer.Option(
+        None,
+        "--media-path",
+        "-m",
+        help="Custom path for storing media files (optional, defaults to ~/webcam-security)",
+    ),
 ) -> None:
     """Initialize the webcam security configuration."""
     try:
@@ -41,6 +47,7 @@ def init(
             chat_id=chat_id,
             topic_id=topic_id,
             device_identifier=device_identifier,
+            media_storage_path=media_storage_path,
         )
         config.save()
 
@@ -101,6 +108,8 @@ def start() -> None:
             console.print(f"• Topic ID: {config.topic_id}")
         device_id = config.device_identifier or socket.gethostname()
         console.print(f"• Device ID: {device_id}")
+        media_path = config.get_media_storage_path()
+        console.print(f"• Media Storage: {media_path}")
 
         console.print("\n[bold]Controls:[/bold]")
         console.print("• Press 'q' in the preview window to stop monitoring")
@@ -156,6 +165,8 @@ def status() -> None:
         )
         device_id = config.device_identifier or socket.gethostname()
         console.print(f"[bold]Device ID:[/bold] {device_id}")
+        media_path = config.get_media_storage_path()
+        console.print(f"[bold]Media Storage:[/bold] {media_path}")
         console.print(
             f"[bold]Monitoring hours:[/bold] {config.monitoring_start_hour}:00 - {config.monitoring_end_hour}:00"
         )

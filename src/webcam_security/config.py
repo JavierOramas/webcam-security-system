@@ -23,6 +23,7 @@ class Config:
     cleanup_days: int = 3
     force_monitoring: bool = False  # Force monitoring regardless of time
     device_identifier: Optional[str] = None  # Custom identifier for media messages
+    media_storage_path: Optional[str] = None  # Custom path for storing media files
 
     @classmethod
     def load(cls) -> "Config":
@@ -57,3 +58,15 @@ class Config:
     def is_configured(self) -> bool:
         """Check if the configuration is valid."""
         return bool(self.bot_token and self.chat_id)
+
+    def get_media_storage_path(self) -> Path:
+        """Get the media storage path, creating it if it doesn't exist."""
+        if self.media_storage_path:
+            path = Path(self.media_storage_path).expanduser()
+        else:
+            # Default to ~/webcam-security
+            path = Path.home() / "webcam-security"
+        
+        # Create the directory if it doesn't exist
+        path.mkdir(parents=True, exist_ok=True)
+        return path

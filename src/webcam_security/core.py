@@ -122,10 +122,10 @@ class SecurityMonitor:
         if days_to_keep is None:
             days_to_keep = self.config.cleanup_days
 
-        current_dir = Path.cwd()
-        recording_files = list(current_dir.glob("recording_*.mp4"))
-        temp_video_files = list(current_dir.glob("temp_video_*.avi"))
-        temp_audio_files = list(current_dir.glob("temp_audio_*.wav"))
+        media_dir = self.config.get_media_storage_path()
+        recording_files = list(media_dir.glob("recording_*.mp4"))
+        temp_video_files = list(media_dir.glob("temp_video_*.avi"))
+        temp_audio_files = list(media_dir.glob("temp_audio_*.wav"))
 
         # Combine and sort all files by creation time
         all_files = recording_files + temp_video_files + temp_audio_files
@@ -324,16 +324,18 @@ class SecurityMonitor:
                     )
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+                    media_dir = self.config.get_media_storage_path()
+                    
                     if AUDIO_AVAILABLE and FFMPEG_AVAILABLE:
-                        video_path = f"temp_video_{timestamp}.avi"
-                        audio_path = f"temp_audio_{timestamp}.wav"
-                        final_path = f"recording_{timestamp}.mp4"
+                        video_path = str(media_dir / f"temp_video_{timestamp}.avi")
+                        audio_path = str(media_dir / f"temp_audio_{timestamp}.wav")
+                        final_path = str(media_dir / f"recording_{timestamp}.mp4")
                     else:
-                        video_path = f"recording_{timestamp}.avi"
+                        video_path = str(media_dir / f"recording_{timestamp}.avi")
                         final_path = video_path
                         audio_path = ""  # Initialize to avoid unbound error
 
-                    snapshot_path = f"snapshot_{timestamp}.jpg"
+                    snapshot_path = str(media_dir / f"snapshot_{timestamp}.jpg")
 
                     # Fix: Use proper fourcc code
                     fourcc = cv2.VideoWriter_fourcc(*"XVID")  # type: ignore

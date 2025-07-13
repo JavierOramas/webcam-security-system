@@ -48,7 +48,7 @@ Once the monitoring is running, you can control it remotely via Telegram command
 
 1. **Initialize configuration:**
    ```bash
-   webcam-security init --bot-token "YOUR_BOT_TOKEN" --chat-id "YOUR_CHAT_ID" --device-id "MyCamera"
+   webcam-security init --bot-token "YOUR_BOT_TOKEN" --chat-id "YOUR_CHAT_ID" --device-id "MyCamera" --media-path "~/my-recordings"
    ```
 
 2. **Start monitoring:**
@@ -67,6 +67,16 @@ All media sent to Telegram includes a device identifier:
 - If you specify `--device-id` during init, that name will be used
 - Otherwise, the system hostname will be used automatically
 - This helps identify which camera sent the alert when you have multiple systems
+
+### Media Storage
+
+Recordings and snapshots are stored in a configurable location:
+- **Default**: `~/webcam-security` (in your home directory)
+- **Custom**: Use `--media-path` during init or `/set_media_path` via Telegram
+- **Examples**: 
+  - `~/Documents/security` - Store in Documents folder
+  - `/var/security/recordings` - Store in system directory
+  - `~/Desktop/camera1` - Store on desktop with device name
 
 ### Available Commands
 

@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import requests
 from datetime import datetime
 import socket
+from pathlib import Path
 
 from .config import Config
 from .updater import SelfUpdater
@@ -91,6 +92,8 @@ class TelegramBotHandler:
                 self.force_monitoring_off()
             elif command == "/set_hours":
                 self.set_monitoring_hours(args)
+            elif command == "/set_media_path":
+                self.set_media_storage_path(args)
             elif command == "/update":
                 self.check_for_updates()
 
@@ -109,6 +112,7 @@ Status: {"🟢 Active" if self.config.force_monitoring else "🟡 Scheduled"}
 /force_on - Force monitoring ON (ignores time schedule)
 /force_off - Force monitoring OFF (returns to schedule)
 /set_hours <start> <end> - Set monitoring hours (24h format)
+/set_media_path <path> - Set media storage path
 /update - Check for software updates
 
 <b>Current Schedule:</b>
@@ -162,13 +166,16 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "/force_off - Force monitoring OFF (returns to schedule)\n\n"
             "<b>Configuration:</b>\n"
             "/set_hours &lt;start&gt; &lt;end&gt; - Set monitoring hours\n"
-            "  Example: /set_hours 22 6 (10 PM to 6 AM)\n\n"
+            "  Example: /set_hours 22 6 (10 PM to 6 AM)\n"
+            "/set_media_path &lt;path&gt; - Set media storage path\n"
+            "  Example: /set_media_path ~/my-recordings\n\n"
             "<b>System:</b>\n"
             "/update - Check for software updates\n"
             "/help - Show this help message\n\n"
             "<b>Examples:</b>\n"
             "• /set_hours 20 8 (8 PM to 8 AM)\n"
-            "• /set_hours 0 24 (24/7 monitoring)"
+            "• /set_hours 0 24 (24/7 monitoring)\n"
+            "• /set_media_path ~/Documents/security"
         )
         self.send_message(help_text)
 
@@ -216,11 +223,39 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 f"❌ <b>Invalid input:</b> {str(e)}\n\nUsage: /set_hours <start> <end>\nExample: /set_hours 22 6"
             )
 
+    def set_media_storage_path(self, args: list) -> None:
+        """Set media storage path."""
+        if len(args) != 1:
+            self.send_message(
+                "❌ <b>Usage:</b> /set_media_path <path>\n\nExample: /set_media_path ~/my-recordings"
+            )
+            return
+
+        try:
+            new_path = args[0]
+            # Test if the path can be created/accessed
+            test_path = Path(new_path).expanduser()
+            test_path.mkdir(parents=True, exist_ok=True)
+
+            self.config.media_storage_path = new_path
+            self.config.save()
+
+            device_id = self.get_device_identifier()
+            message = f"✅ <b>Media storage path updated</b>\n\nDevice: <code>{device_id}</code>\nNew Path: <code>{test_path}</code>\n\nConfiguration saved successfully."
+            self.send_message(message)
+
+        except Exception as e:
+            self.send_message(
+                f"❌ <b>Invalid path:</b> {str(e)}\n\nUsage: /set_media_path <path>\nExample: /set_media_path ~/my-recordings"
+            )
+
     def check_for_updates(self) -> None:
         """Check for software updates."""
         try:
-            has_update, current_version, latest_version = SelfUpdater.check_for_updates()
-            
+            has_update, current_version, latest_version = (
+                SelfUpdater.check_for_updates()
+            )
+
             if has_update:
                 message = f"""
                 🔄 <b>Update Available</b>
@@ -235,13 +270,17 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
 
                 import os
                 import sys
+
                 os.system(f"{sys.executable} -m pip install --upgrade webcam-security")
 
-
-                has_update, current_version, latest_version = SelfUpdater.check_for_updates()
+                has_update, current_version, latest_version = (
+                    SelfUpdater.check_for_updates()
+                )
                 while has_update:
                     time.sleep(10)
-                    has_update, current_version, latest_version = SelfUpdater.check_for_updates()
+                    has_update, current_version, latest_version = (
+                        SelfUpdater.check_for_updates()
+                    )
 
                 message = f"""
                 ✅ <b>Update Applied</b>
@@ -251,7 +290,7 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 Latest Version: <code>{latest_version}</code>
                 """
                 self.send_message(message.strip())
- 
+
             elif latest_version == "unknown":
                 message = f"""
                 ⚠️ <b>Update Check Failed</b>
@@ -268,9 +307,9 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
                 Current Version: <code>{current_version}</code>
                 Status: Latest version installed
                                 """
-            
+
             self.send_message(message.strip())
-            
+
         except Exception as e:
             self.send_message(f"❌ <b>Update check failed:</b> {str(e)}")
 
