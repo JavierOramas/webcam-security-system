@@ -95,7 +95,7 @@ webcam-security start
 
 The GitHub Actions will run:
 - **Multi-platform testing** (Ubuntu, macOS, Windows)
-- **Multi-version testing** (Python 3.8-3.12)
+- **Multi-version testing** (Python 3.8-3.13)
 - **Security scanning** (Safety, Bandit)
 - **Documentation generation**
 

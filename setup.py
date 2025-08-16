@@ -13,7 +13,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="webcam-security",
-    version="0.3.12",
+    version="0.3.13",
     author="Javier Oramas",
     author_email="javiale2000@gmail.com",
     description="A webcam security monitoring system with Telegram notifications",
@@ -31,7 +31,7 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     python_requires=">=3.8",
     install_requires=requirements,

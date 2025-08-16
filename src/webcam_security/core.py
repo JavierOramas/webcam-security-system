@@ -278,7 +278,10 @@ class SecurityMonitor:
         avg = None
         recording = False
         motion_timer = None
-        telegram_sent = False
+        telegram_sent = Fal        motion_start_time = None
+        motion_frames = []
+        start_image_saved = False
+        end_image_path = None
 
         while self.running:
             ret, frame = self.cap.read()
@@ -340,7 +343,15 @@ class SecurityMonitor:
                         final_path = video_path
                         audio_path = ""  # Initialize to avoid unbound error
 
-                    snapshot_path = str(media_dir / f"snapshot_{timestamp}.jpg")
+                    # Save start image
+                    start_image_path = str(media_dir / f"start_{timestamp}.jpg")
+                    cv2.imwrite(start_image_path, frame)
+                    self.send_telegram_photo(start_image_path, "🚨 Motion detected! (Start)")
+                    start_image_saved = True
+                    
+                    # Initialize motion clip recording
+                    motion_frames = [frame.copy()]
+                    motion_start_time = current_time
 
                     # Fix: Use proper fourcc code
                     fourcc = cv2.VideoWriter_fourcc(*"XVID")  # type: ignore
@@ -364,11 +375,44 @@ class SecurityMonitor:
                         self.audio_path = audio_path
                         self.final_path = final_path
 
-                    cv2.imwrite(snapshot_path, frame)
-                    self.send_telegram_photo(snapshot_path, "🚨 Motion detected!")
-                    os.remove(snapshot_path)
-                    telegram_sent = True
                     recording = True
+                    telegram_sent = False
+                
+                # Store frames for the 3-second clip
+                if motion_start_time and (current_time - motion_start_time <= 3.0):
+                    motion_frames.append(frame.copy())
+                
+                # Send 3-second clip after we have enough frames
+                if motion_start_time and (current_time - motion_start_time > 3.0) and not telegram_sent:
+                    # Create and send the 3-second clip
+                    clip_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    media_dir = self.config.get_media_storage_path()
+                    clip_path = str(media_dir / f"motion_clip_{clip_timestamp}.avi")
+                    
+                    # Create video writer for the clip
+                    clip_writer = cv2.VideoWriter(
+                        clip_path,
+                        cv2.VideoWriter_fourcc(*"XVID"),
+                        self.config.recording_fps,
+                        (frame.shape[1], frame.shape[0]),
+                    )
+                    
+                    # Write all frames to the clip
+                    for f in motion_frames:
+                        clip_writer.write(f)
+                    clip_writer.release()
+                    
+                    # Send the clip to Telegram
+                    self.send_telegram_video(clip_path, "🎥 Motion detected! (First 3 seconds)")
+                    
+                    # Save end image for the clip
+                    end_image_path = str(media_dir / f"clip_end_{clip_timestamp}.jpg")
+                    cv2.imwrite(end_image_path, frame)
+                    
+                    # Clean up the clip file after sending
+                    os.remove(clip_path)
+                    
+                    telegram_sent = True
 
                 if self.out is not None:
                     self.out.write(frame)
@@ -402,11 +446,23 @@ class SecurityMonitor:
                         and hasattr(self, "final_path")
                     ):
                         self._merge_audio_video()
+                    
+                    # Send end image if recording has stopped
+                    if start_image_saved:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        media_dir = self.config.get_media_storage_path()
+                        end_image_path = str(media_dir / f"end_{timestamp}.jpg")
+                        cv2.imwrite(end_image_path, frame)
+                        self.send_telegram_photo(end_image_path, "🚨 Motion ended! (End)")
+                        os.remove(end_image_path)
+                        start_image_saved = False
 
                     self.out = None
                     recording = False
                     telegram_sent = False
                     motion_timer = None
+                    motion_start_time = None
+                    motion_frames = []
 
             # Show preview with status
             if self.config.force_monitoring:
