@@ -94,9 +94,7 @@ class SecurityMonitor:
             except Exception as e:
                 print(f"[ERROR] Failed to send Telegram error notification: {e}")
 
-    def send_telegram_photo(
-        self, image_path: str, caption: str = "Motion detected!"
-    ) -> None:
+    def send_telegram_photo(self, image_path: str, caption: str = "Motion detected!") -> None:
         """Send photo to Telegram."""
         try:
             device_id = self.get_device_identifier()
@@ -121,6 +119,32 @@ class SecurityMonitor:
             error_msg = f"Telegram send failed: {e}"
             print(f"[ERROR] {error_msg}")
             self.notify_error(str(e), context="send_telegram_photo")
+
+    def send_telegram_video(self, video_path: str, caption: str = "Motion detected video!") -> None:
+        """Send video to Telegram."""
+        try:
+            device_id = self.get_device_identifier()
+            enhanced_caption = f"🎥 {caption}\n\nDevice: {device_id}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+
+            url = f"https://api.telegram.org/bot{self.config.bot_token}/sendVideo"
+            with open(video_path, "rb") as video:
+                files = {"video": video}
+                data = {
+                    "chat_id": self.config.chat_id,
+                    "caption": enhanced_caption,
+                }
+                if self.config.topic_id:
+                    data["message_thread_id"] = str(self.config.topic_id)
+
+                response = requests.post(url, files=files, data=data)
+                if response.status_code != 200:
+                    error_msg = f"Telegram video send failed: {response.text}"
+                    print(f"[ERROR] {error_msg}")
+                    self.notify_error(error_msg, context="send_telegram_video")
+        except Exception as e:
+            error_msg = f"Telegram video send failed: {e}"
+            print(f"[ERROR] {error_msg}")
+            self.notify_error(str(e), context="send_telegram_video")
 
     def clean_old_files(self, days_to_keep: Optional[int] = None) -> None:
         """Clean old recording files."""
@@ -278,8 +302,13 @@ class SecurityMonitor:
         avg = None
         recording = False
         motion_timer = None
-        telegram_sent = Fal        motion_start_time = None
+        telegram_sent = False
+        motion_start_time = None
         motion_frames = []
+        start_image_saved = False
+        end_image_path = None
+        first_motion_time = None
+        second_image_taken = False
         start_image_saved = False
         end_image_path = None
 
@@ -343,11 +372,14 @@ class SecurityMonitor:
                         final_path = video_path
                         audio_path = ""  # Initialize to avoid unbound error
 
+                    # Modify the motion detection code around line 350 (after saving the first image)
                     # Save start image
                     start_image_path = str(media_dir / f"start_{timestamp}.jpg")
                     cv2.imwrite(start_image_path, frame)
                     self.send_telegram_photo(start_image_path, "🚨 Motion detected! (Start)")
                     start_image_saved = True
+                    first_motion_time = current_time
+                    second_image_taken = False
                     
                     # Initialize motion clip recording
                     motion_frames = [frame.copy()]
@@ -379,9 +411,17 @@ class SecurityMonitor:
                     telegram_sent = False
                 
                 # Store frames for the 3-second clip
-                if motion_start_time and (current_time - motion_start_time <= 3.0):
+                if motion_start_time and (current_time - motion_start_time <= 5.0):
                     motion_frames.append(frame.copy())
                 
+                # Add this code after the motion detection block (around line 380, before the "Store frames for the 3-second clip" block)
+                # Take second image 1 second after motion detection
+                if first_motion_time and not second_image_taken and (current_time - first_motion_time >= 1.0):
+                    second_image_path = str(media_dir / f"second_{timestamp}.jpg")
+                    cv2.imwrite(second_image_path, frame)
+                    self.send_telegram_photo(second_image_path, "🚨 Motion continued! (Second)")
+                    second_image_taken = True
+
                 # Send 3-second clip after we have enough frames
                 if motion_start_time and (current_time - motion_start_time > 3.0) and not telegram_sent:
                     # Create and send the 3-second clip
