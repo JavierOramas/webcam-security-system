@@ -10,7 +10,8 @@ import socket
 from pathlib import Path
 import sys
 import subprocess
-
+import os
+import cv2
 from .config import Config
 from .updater import SelfUpdater
 
@@ -110,6 +111,8 @@ class TelegramBotHandler:
                 self.restart_bot()
             elif command == "/restart":
                 self.restart_application()
+            elif command == "/stream":
+                self.start_webcam_stream(args)
 
     def send_start_message(self) -> None:
         """Send welcome message."""
@@ -487,3 +490,36 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
 
             # Short sleep between polls to prevent excessive CPU usage
             time.sleep(0.5)
+
+    def start_webcam_stream(self, args: list) -> None:
+        """Handle /stream command with optional device verification."""
+        requested_device = args[0] if args else self.get_device_identifier()
+        current_device = self.get_device_identifier()
+        
+        if requested_device != current_device:
+            self.send_message(f"This bot is for {current_device}, not {requested_device}")
+            return
+        
+        self.send_message(f"Starting stream from {current_device} for 5 minutes...")
+        threading.Thread(target=self._run_webcam_stream, daemon=True).start()
+    
+    def _run_webcam_stream(self) -> None:
+        """Capture and send frames every 3 seconds for 5 minutes."""
+        if not self.monitor or not self.monitor.cap or not self.monitor.cap.isOpened():
+            self.send_message("Camera not available. Ensure the monitor is running.")
+            return
+        
+        end_time = time.time() + 300  # 5 minutes
+        while time.time() < end_time and self.running:
+            ret, frame = self.monitor.cap.read()
+            if ret:
+                temp_path = "/tmp/stream_frame.jpg"
+                cv2.imwrite(temp_path, frame)
+                self.monitor.send_telegram_photo(temp_path, "Stream frame")
+                os.remove(temp_path)
+            else:
+                self.send_message("Failed to capture frame.")
+                break
+            time.sleep(3)
+        
+        self.send_message("Stream ended.")

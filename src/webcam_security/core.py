@@ -410,11 +410,12 @@ class SecurityMonitor:
                     recording = True
                     telegram_sent = False
                 
-                # Store frames for the 3-second clip
-                if motion_start_time and (current_time - motion_start_time <= 5.0):
+                # Store frames for the 10-second clip
+                if motion_start_time and (current_time - motion_start_time <= 10.0):
                     motion_frames.append(frame.copy())
+                    # Add a small delay to control frame rate
+                    time.sleep(1.0 / self.config.recording_fps)
                 
-                # Add this code after the motion detection block (around line 380, before the "Store frames for the 3-second clip" block)
                 # Take second image 1 second after motion detection
                 if first_motion_time and not second_image_taken and (current_time - first_motion_time >= 1.0):
                     second_image_path = str(media_dir / f"second_{timestamp}.jpg")
@@ -423,7 +424,7 @@ class SecurityMonitor:
                     second_image_taken = True
 
                 # Send 3-second clip after we have enough frames
-                if motion_start_time and (current_time - motion_start_time > 3.0) and not telegram_sent:
+                if motion_start_time and (current_time - motion_start_time > 10.0) and not telegram_sent:
                     # Create and send the 3-second clip
                     clip_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     media_dir = self.config.get_media_storage_path()
@@ -486,6 +487,28 @@ class SecurityMonitor:
                         and hasattr(self, "final_path")
                     ):
                         self._merge_audio_video()
+                        # For video-only, transcode to HEVC MKV if FFMPEG_AVAILABLE
+                        if not AUDIO_AVAILABLE and FFMPEG_AVAILABLE and hasattr(self, "video_path") and hasattr(self, "final_path"):
+                            import subprocess
+                            cmd = [
+                                "ffmpeg",
+                                "-y",
+                                "-i",
+                                self.video_path,
+                                "-c:v",
+                                "libx265",
+                                self.final_path,
+                            ]
+                            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                            if result.returncode == 0:
+                                os.remove(self.video_path)
+                            else:
+                                print(f"[ERROR] Failed to transcode to HEVC MKV: {result.stderr}")
+                                self.final_path = self.video_path  # Fallback to AVI
+
+                    # Send the final video (now MKV)
+                    if hasattr(self, "final_path"):
+                        self.send_telegram_video(self.final_path, "📹 Full motion recording")
                     
                     # Send end image if recording has stopped
                     if start_image_saved:
