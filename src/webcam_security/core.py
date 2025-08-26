@@ -603,7 +603,7 @@ class SecurityMonitor:
         if not self.config.headless:
             cv2.imshow("Security Feed", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+                return
 
         # Cleanup
         if recording and self.out is not None:
