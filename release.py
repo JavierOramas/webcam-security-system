@@ -99,7 +99,7 @@ def upload_to_pypi(test=False):
 
     if test:
         return run(
-            "python -m twine upload --repository testpypi dist/*",
+            "python -m twine upload dist/*",
             "Uploading to TestPyPI",
         )
     else:
