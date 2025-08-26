@@ -527,32 +527,80 @@ class SecurityMonitor:
                     motion_start_time = None
                     motion_frames = []
 
-            # Show preview with status
-            if self.config.force_monitoring:
-                status_text = "MONITORING FORCED ON"
-                color = (0, 255, 255)  # Cyan for forced mode
-            elif self.is_monitoring_hours():
-                status_text = "MONITORING ACTIVE"
-                color = (0, 255, 0)  # Green for active
-            else:
-                status_text = "MONITORING INACTIVE"
-                color = (0, 0, 255)  # Red for inactive
+            # Show preview with status only if not headless
+            if not self.config.headless:
+                if self.config.force_monitoring:
+                    status_text = "MONITORING FORCED ON"
+                    color = (0, 255, 255)  # Cyan for forced mode
+                elif self.is_monitoring_hours():
+                    status_text = "MONITORING ACTIVE"
+                    color = (0, 255, 0)  # Green for active
+                else:
+                    status_text = "MONITORING INACTIVE"
+                    color = (0, 0, 255)  # Red for inactive
+            
+                cv2.putText(
+                    frame,
+                    status_text,
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    color,
+                    2,
+                )
+            
+                cv2.imshow("Security Feed", frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
-            cv2.putText(
-                frame,
-                status_text,
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                color,
-                2,
-            )
+        # Cleanup
+        if recording and self.out is not None:
+            self.out.release()
 
-            # Check for manual photo request
-            if self._manual_photo_requested:
-                self._manual_photo_requested = False
-                self._take_and_send_manual_photo(frame)
+        # Stop audio recording if still running
+        if AUDIO_AVAILABLE and self.audio_recording:
+            self.audio_recording = False
+            if self.audio_thread:
+                self.audio_thread.join(timeout=5)
 
+        if self.cap is not None:
+            self.cap.release()
+        if not self.config.headless:
+            cv2.destroyAllWindows()
+
+        # In the stop recording block, after sending:
+        # Send the final video
+        if hasattr(self, "final_path"):
+            self.send_telegram_video(self.final_path, "📹 Full motion recording")
+            # Remove the file after upload
+            if os.path.exists(self.final_path):
+                os.remove(self.final_path)
+                print(f"[INFO] Deleted uploaded file: {self.final_path}")
+
+        # Send end image if recording has stopped
+        if start_image_saved:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            media_dir = self.config.get_media_storage_path()
+            end_image_path = str(media_dir / f"end_{timestamp}.jpg")
+            cv2.imwrite(end_image_path, frame)
+            self.send_telegram_photo(end_image_path, "🚨 Motion ended! (End)")
+            os.remove(end_image_path)
+            start_image_saved = False
+
+        self.out = None
+        recording = False
+        telegram_sent = False
+        motion_timer = None
+        motion_start_time = None
+        motion_frames = []
+
+        # Check for manual photo request
+        if self._manual_photo_requested:
+            self._manual_photo_requested = False
+            self._take_and_send_manual_photo(frame)
+
+        # Show preview with status only if not headless
+        if not self.config.headless:
             cv2.imshow("Security Feed", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -569,7 +617,10 @@ class SecurityMonitor:
 
         if self.cap is not None:
             self.cap.release()
+            self.cap = None
+
         cv2.destroyAllWindows()
+        print("[INFO] Security monitoring stopped")
 
     def _take_and_send_manual_photo(self, frame) -> None:
         """Take a manual photo and send it to Telegram."""

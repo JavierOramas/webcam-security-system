@@ -24,6 +24,7 @@ class Config:
     force_monitoring: bool = False  # Force monitoring regardless of time
     device_identifier: Optional[str] = None  # Custom identifier for media messages
     media_storage_path: Optional[str] = None  # Custom path for storing media files
+    headless: bool = False  # Run without GUI preview
 
     @classmethod
     def load(cls) -> "Config":
