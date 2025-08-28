@@ -19,7 +19,7 @@ class Config:
     grace_period: int = 25  # seconds
     min_contour_area: int = 500
     motion_threshold: int = 25 
-    recording_fps: float = 20.0
+    recording_fps: float = 30.0
     cleanup_days: int = 3
     force_monitoring: bool = False  # Force monitoring regardless of time
     device_identifier: Optional[str] = None  # Custom identifier for media messages
