@@ -15,10 +15,11 @@ import subprocess
 import shutil
 
 # Optional audio imports
+sd = None  # type: ignore
+sf = None  # type: ignore
 try:
-    import sounddevice as sd
-    import soundfile as sf
-
+    import sounddevice as sd  # type: ignore
+    import soundfile as sf  # type: ignore
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
@@ -27,9 +28,9 @@ except ImportError:
     )
 
 # Optional ffmpeg import (python wrapper)
+ffmpeg = None  # type: ignore
 try:
     import ffmpeg  # type: ignore
-
     FFMPEG_AVAILABLE = True
 except ImportError:
     FFMPEG_AVAILABLE = False
@@ -63,8 +64,10 @@ class SecurityMonitor:
         self._ffmpeg_audio_process: Optional[subprocess.Popen] = None
         
         # Auto-detect headless environment
-        if 'DISPLAY' not in os.environ and not self.config.headless:
-            print("[INFO] No display detected, enabling headless mode automatically.")
+        if "DISPLAY" not in os.environ and not self.config.headless:
+            print(
+                "[INFO] No display detected, enabling headless mode automatically."
+            )
             self.config.headless = True
 
     def is_monitoring_hours(self) -> bool:
@@ -95,7 +98,9 @@ class SecurityMonitor:
     def request_manual_recording(self, duration_seconds: Optional[int] = None) -> None:
         """Request a manual video recording regardless of motion/schedule."""
         self._manual_recording_duration = (
-            int(duration_seconds) if duration_seconds else self.config.min_recording_seconds
+            int(duration_seconds)
+            if duration_seconds
+            else self.config.min_recording_seconds
         )
         self._manual_recording_requested = True
 
@@ -104,63 +109,94 @@ class SecurityMonitor:
         if self.telegram_bot:
             device_id = self.get_device_identifier()
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            message = f"❌ <b>Error on {device_id}</b>\n<code>{timestamp}</code>\n<b>Context:</b> {context}\n<b>Details:</b> {error_msg}"
+            message = (
+                f"❌ <b>Error on {device_id}</b>\n<code>{timestamp}</code>\n"
+                f"<b>Context:</b> {context}\n<b>Details:</b> {error_msg}"
+            )
             try:
                 self.telegram_bot.send_message(message)
             except Exception as e:
                 print(f"[ERROR] Failed to send Telegram error notification: {e}")
 
     def send_telegram_photo(self, image_path: str, caption: str = "Motion detected!") -> None:
-        """Send photo to Telegram."""
-        try:
-            device_id = self.get_device_identifier()
-            enhanced_caption = f"🚨 {caption}\n\nDevice: {device_id}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+        """Send photo to Telegram with simple retry logic."""
+        device_id = self.get_device_identifier()
+        enhanced_caption = (
+            f"🚨 {caption}\n\nDevice: {device_id}\nTime: "
+            f"{datetime.now().strftime('%H:%M:%S')}"
+        )
+        url = f"https://api.telegram.org/bot{self.config.bot_token}/sendPhoto"
+        data = {
+            "chat_id": self.config.chat_id,
+            "caption": enhanced_caption,
+        }
+        if self.config.topic_id:
+            data["message_thread_id"] = str(self.config.topic_id)
 
-            url = f"https://api.telegram.org/bot{self.config.bot_token}/sendPhoto"
-            with open(image_path, "rb") as photo:
-                files = {"photo": photo}
-                data = {
-                    "chat_id": self.config.chat_id,
-                    "caption": enhanced_caption,
-                }
-                if self.config.topic_id:
-                    data["message_thread_id"] = str(self.config.topic_id)
+        last_error = None
+        for attempt in range(3):
+            try:
+                with open(image_path, "rb") as photo:
+                    files = {"photo": photo}
+                    response = requests.post(
+                        url,
+                        files=files,
+                        data=data,
+                        timeout=60,
+                        headers={"Connection": "close"},
+                    )
+                if response.status_code == 200:
+                    return
+                last_error = f"HTTP {response.status_code}: {response.text}"
+                time.sleep(2 * (attempt + 1))
+            except Exception as e:
+                last_error = str(e)
+                time.sleep(2 * (attempt + 1))
 
-                response = requests.post(url, files=files, data=data)
-                if response.status_code != 200:
-                    error_msg = f"Telegram send failed: {response.text}"
-                    print(f"[ERROR] {error_msg}")
-                    self.notify_error(error_msg, context="send_telegram_photo")
-        except Exception as e:
-            error_msg = f"Telegram send failed: {e}"
+        if last_error:
+            error_msg = f"Telegram send failed: {last_error}"
             print(f"[ERROR] {error_msg}")
-            self.notify_error(str(e), context="send_telegram_photo")
+            self.notify_error(error_msg, context="send_telegram_photo")
 
     def send_telegram_video(self, video_path: str, caption: str = "Motion detected video!") -> None:
-        """Send video to Telegram."""
-        try:
-            device_id = self.get_device_identifier()
-            enhanced_caption = f"🎥 {caption}\n\nDevice: {device_id}\nTime: {datetime.now().strftime('%H:%M:%S')}"
+        """Send video to Telegram with simple retry logic."""
+        device_id = self.get_device_identifier()
+        enhanced_caption = (
+            f"🎥 {caption}\n\nDevice: {device_id}\nTime: "
+            f"{datetime.now().strftime('%H:%M:%S')}"
+        )
+        url = f"https://api.telegram.org/bot{self.config.bot_token}/sendVideo"
+        data = {
+            "chat_id": self.config.chat_id,
+            "caption": enhanced_caption,
+        }
+        if self.config.topic_id:
+            data["message_thread_id"] = str(self.config.topic_id)
 
-            url = f"https://api.telegram.org/bot{self.config.bot_token}/sendVideo"
-            with open(video_path, "rb") as video:
-                files = {"video": video}
-                data = {
-                    "chat_id": self.config.chat_id,
-                    "caption": enhanced_caption,
-                }
-                if self.config.topic_id:
-                    data["message_thread_id"] = str(self.config.topic_id)
+        last_error = None
+        for attempt in range(3):
+            try:
+                with open(video_path, "rb") as video:
+                    files = {"video": video}
+                    response = requests.post(
+                        url,
+                        files=files,
+                        data=data,
+                        timeout=120,
+                        headers={"Connection": "close"},
+                    )
+                if response.status_code == 200:
+                    return
+                last_error = f"HTTP {response.status_code}: {response.text}"
+                time.sleep(2 * (attempt + 1))
+            except Exception as e:
+                last_error = str(e)
+                time.sleep(2 * (attempt + 1))
 
-                response = requests.post(url, files=files, data=data)
-                if response.status_code != 200:
-                    error_msg = f"Telegram send failed: {response.text}"
-                    print(f"[ERROR] {error_msg}")
-                    self.notify_error(error_msg, context="send_telegram_video")
-        except Exception as e:
-            error_msg = f"Telegram send failed: {e}"
+        if last_error:
+            error_msg = f"Telegram send failed: {last_error}"
             print(f"[ERROR] {error_msg}")
-            self.notify_error(str(e), context="send_telegram_video")
+            self.notify_error(error_msg, context="send_telegram_video")
 
     def _take_and_send_manual_photo(self, frame) -> None:
         """Take a manual photo and send it to Telegram."""
@@ -341,28 +377,34 @@ class SecurityMonitor:
         finally:
             self._ffmpeg_audio_process = None
 
-    def _merge_video_with_audio(self, video_path: str, audio_path: Optional[str], final_path: str) -> None:
-        """Merge video with audio (or silent track) into MP4 using ffmpeg binary."""
+    def _merge_video_with_audio(self, video_path: str, audio_path: Optional[str], final_path: str) -> bool:
+        """Merge video with audio (or silent track) into MP4. Returns True on success."""
         if not FFMPEG_BIN_AVAILABLE:
             # Fallback: try ffmpeg-python if available
-            if FFMPEG_AVAILABLE and audio_path and os.path.exists(audio_path):
+            if FFMPEG_AVAILABLE and audio_path and os.path.exists(audio_path) and ffmpeg:
                 try:
                     print("[INFO] Merging with ffmpeg-python as fallback...")
                     v = ffmpeg.input(video_path)
                     a = ffmpeg.input(audio_path)
                     (
                         ffmpeg
-                        .output(v, a, final_path, vcodec="libx264", acodec="aac", preset="veryfast", crf=23)
+                        .output(
+                            v,
+                            a,
+                            final_path,
+                            vcodec="libx264",
+                            acodec="aac",
+                            preset="veryfast",
+                            crf=23,
+                        )
                         .overwrite_output()
                         .run(quiet=True)
                     )
-                    return
+                    return os.path.exists(final_path)
                 except Exception as e:
                     print(f"[ERROR] ffmpeg-python merge failed: {e}")
-            # As last resort, just copy video (no audio)
-            print("[WARNING] ffmpeg binary not available; sending video without audio.")
-            self.send_telegram_video(video_path, "🎥 Recording complete (video only)")
-            return
+            # Cannot produce MP4 with audio without ffmpeg
+            return False
 
         try:
             if audio_path and os.path.exists(audio_path):
@@ -413,10 +455,10 @@ class SecurityMonitor:
                     final_path,
                 ]
             subprocess.run(cmd, check=True)
+            return os.path.exists(final_path)
         except subprocess.CalledProcessError as e:
             print(f"[ERROR] ffmpeg merge failed: {e}")
-            # As fallback, attempt to send original video
-            self.send_telegram_video(video_path, "🎥 Recording complete (video only)")
+            return False
 
     def clean_old_files_scheduler(self) -> None:
         """Background thread to clean old files periodically."""
@@ -647,22 +689,32 @@ class SecurityMonitor:
                     self._stop_ffmpeg_audio_capture()
 
                     # Merge with audio (or silent track) and send
+                    merged_ok = False
                     try:
-                        self._merge_video_with_audio(video_path, audio_path if os.path.exists(audio_path) else None, final_path)
-                        # Clean temp files
+                        merged_ok = self._merge_video_with_audio(
+                            video_path,
+                            audio_path if os.path.exists(audio_path) else None,
+                            final_path,
+                        )
+                    except Exception as e:
+                        print(f"[ERROR] Post-processing failed: {e}")
+
+                    # Decide which file to send
+                    if merged_ok and os.path.exists(final_path):
+                        # Clean temp files first
                         if os.path.exists(video_path):
                             os.remove(video_path)
                         if os.path.exists(audio_path):
                             os.remove(audio_path)
-                        # Send final video
                         self.send_telegram_video(final_path, "🎥 Recording complete!")
-                    except Exception as e:
-                        print(f"[ERROR] Post-processing failed: {e}")
-                        # As fallback, try to send whatever video we have
-                        if os.path.exists(final_path):
-                            self.send_telegram_video(final_path, "🎥 Recording complete (postprocess error)")
-                        elif os.path.exists(video_path):
-                            self.send_telegram_video(video_path, "🎥 Recording (raw video)")
+                    elif os.path.exists(video_path):
+                        # Fallback: send raw video
+                        self.send_telegram_video(video_path, "🎥 Recording (raw video)")
+                    else:
+                        self.notify_error(
+                            "No video file available to send",
+                            context="finish_recording",
+                        )
 
                     # Reset state
                     recording = False

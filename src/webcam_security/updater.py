@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import os
 import threading
 import time
+from pathlib import Path
 
 
 class SelfUpdater:
@@ -59,7 +60,10 @@ class SelfUpdater:
                     print(f"[DEBUG] Unexpected PyPI response format: {data}")
                     return None
             else:
-                print(f"[DEBUG] PyPI request failed with status {response.status_code}")
+                print(
+                    f"[DEBUG] PyPI request failed with status "
+                    f"{response.status_code}"
+                )
                 return None
         except Exception as e:
             print(f"[DEBUG] Failed to get latest version: {e}")
@@ -113,26 +117,105 @@ class SelfUpdater:
                 )
 
                 print(f"[INFO] Update successful: {result.stdout}")
+                # Also install requirements.txt if available (for source runs)
+                try:
+                    req_path = cls.find_requirements_file()
+                    if req_path:
+                        print(
+                            f"[INFO] Installing requirements from: {req_path}"
+                        )
+                        cls.install_requirements(req_path)
+                    else:
+                        print(
+                            "[INFO] No requirements.txt found; "
+                            "skipping requirements install"
+                        )
+                except Exception as e:
+                    print(f"[WARNING] Requirements install step failed: {e}")
+
                 return True
 
             except subprocess.CalledProcessError as e:
-                print(f"[ERROR] Update attempt {attempt + 1} failed: {e.stderr}")
+                print(
+                    f"[ERROR] Update attempt {attempt + 1} failed: {e.stderr}"
+                )
                 if attempt < cls.MAX_RETRIES - 1:
                     print(f"[INFO] Retrying in {cls.RETRY_DELAY} seconds...")
                     time.sleep(cls.RETRY_DELAY)
                 else:
-                    print(f"[ERROR] All {cls.MAX_RETRIES} update attempts failed")
+                    print(
+                        f"[ERROR] All {cls.MAX_RETRIES} update attempts failed"
+                    )
                     return False
             except Exception as e:
-                print(f"[ERROR] Update attempt {attempt + 1} failed: {e}")
+                print(
+                    f"[ERROR] Update attempt {attempt + 1} failed: {e}"
+                )
                 if attempt < cls.MAX_RETRIES - 1:
                     print(f"[INFO] Retrying in {cls.RETRY_DELAY} seconds...")
                     time.sleep(cls.RETRY_DELAY)
                 else:
-                    print(f"[ERROR] All {cls.MAX_RETRIES} update attempts failed")
+                    print(
+                        f"[ERROR] All {cls.MAX_RETRIES} update attempts failed"
+                    )
                     return False
 
         return False
+
+    @classmethod
+    def find_requirements_file(cls) -> Optional[str]:
+        """Try to locate a requirements.txt for source installs."""
+        candidates = []
+        try:
+            candidates.append(Path.cwd() / "requirements.txt")
+        except Exception:
+            pass
+        try:
+            candidates.append(
+                Path(sys.argv[0]).resolve().parent / "requirements.txt"
+            )
+        except Exception:
+            pass
+        try:
+            # When running from source: <repo>/src/webcam_security/updater.py
+            # parents[2] -> <repo>
+            repo_root = Path(__file__).resolve().parents[2]
+            candidates.append(repo_root / "requirements.txt")
+        except Exception:
+            pass
+
+        for path in candidates:
+            try:
+                if path.exists():
+                    return str(path)
+            except Exception:
+                continue
+        return None
+
+    @classmethod
+    def install_requirements(cls, requirements_path: str) -> bool:
+        """Install requirements from requirements.txt using current Python."""
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    requirements_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            print(f"[INFO] Requirements installed: {result.stdout}")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(
+                f"[ERROR] Failed to install requirements: {e.stderr}"
+            )
+            return False
 
     @classmethod
     def restart_application(cls) -> None:
@@ -155,8 +238,9 @@ class SelfUpdater:
             try:
                 from packaging import version as pkg_version
 
-                has_update = pkg_version.parse(latest_version) > pkg_version.parse(
-                    current_version
+                has_update = (
+                    pkg_version.parse(latest_version)
+                    > pkg_version.parse(current_version)
                 )
                 print(f"[DEBUG] Has update: {has_update}")
             except ImportError:
@@ -167,10 +251,15 @@ class SelfUpdater:
     def auto_update(cls) -> bool:
         """Automatically check for updates and install if available."""
         try:
-            has_update, current_version, latest_version = cls.check_for_updates()
+            has_update, current_version, latest_version = (
+                cls.check_for_updates()
+            )
 
             if has_update:
-                print(f"[INFO] Update available: {current_version} -> {latest_version}")
+                print(
+                    f"[INFO] Update available: {current_version} -> "
+                    f"{latest_version}"
+                )
                 print("[INFO] Installing update...")
 
                 if cls.update_package():
@@ -182,7 +271,9 @@ class SelfUpdater:
                     print("[ERROR] Failed to install update after all retries")
                     return False
             else:
-                print(f"[INFO] Already up to date (version {current_version})")
+                print(
+                    f"[INFO] Already up to date (version {current_version})"
+                )
                 return False
 
         except Exception as e:
