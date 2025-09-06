@@ -107,6 +107,8 @@ class TelegramBotHandler:
                 self.start_async_update()
             elif command == "/peek":
                 self.take_manual_photo()
+            elif command == "/record":
+                self.start_manual_recording(args)
             elif command == "/restart_bot":
                 self.restart_bot()
             elif command == "/restart":
@@ -190,6 +192,8 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "  Example: /set_hours 22 6 (10 PM to 6 AM)\n"
             "/set_media_path &lt;path&gt; - Set media storage path\n"
             "  Example: /set_media_path ~/my-recordings\n\n"
+            "<b>Recording:</b>\n"
+            "/record [seconds] - Start manual recording now (default 60s)\n\n"
             "<b>System:</b>\n"
             "/update - Check for software updates\n"
             "/restart_bot - Restart bot polling thread\n"
@@ -205,6 +209,37 @@ Current Time: {datetime.now().strftime("%H:%M:%S")}
             "• /update_async - Background update with retries"
         )
         self.send_message(help_text)
+
+    def start_manual_recording(self, args: list) -> None:
+        """Start a manual recording regardless of motion or schedule."""
+        if not self.monitor:
+            self.send_message("Monitor not available. Start the monitor first.")
+            return
+
+        duration = None
+        if len(args) == 1:
+            try:
+                duration = max(1, int(args[0]))
+            except ValueError:
+                self.send_message("Invalid duration. Usage: /record [seconds]")
+                return
+
+        device_id = self.get_device_identifier()
+        dur_txt = f"{duration}s" if duration else f"{self.monitor.config.min_recording_seconds}s"
+        message = (
+            f"🎬 <b>Manual recording requested</b>\n\n"
+            f"Device: <code>{device_id}</code>\n"
+            f"Duration: {dur_txt}\n"
+            f"Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+            f"Recording will start immediately."
+        )
+        self.send_message(message)
+
+        # Trigger manual recording on the monitor
+        try:
+            self.monitor.request_manual_recording(duration)
+        except Exception as e:
+            self.send_message(f"❌ Failed to request recording: {str(e)}")
 
     def force_monitoring_on(self) -> None:
         """Force monitoring on."""

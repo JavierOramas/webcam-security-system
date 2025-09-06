@@ -11,6 +11,8 @@ from typing import Optional
 import signal
 import sys
 import socket
+import subprocess
+import shutil
 
 # Optional audio imports
 try:
@@ -24,16 +26,19 @@ except ImportError:
         "[WARNING] Audio recording not available. Install sounddevice and soundfile for audio support."
     )
 
-# Optional ffmpeg import
+# Optional ffmpeg import (python wrapper)
 try:
-    import ffmpeg
+    import ffmpeg  # type: ignore
 
     FFMPEG_AVAILABLE = True
 except ImportError:
     FFMPEG_AVAILABLE = False
     print(
-        "[WARNING] FFmpeg not available. Install ffmpeg-python for audio/video merging."
+        "[WARNING] ffmpeg-python not available. Falling back to subprocess calls if ffmpeg binary exists."
     )
+
+# Detect ffmpeg binary availability
+FFMPEG_BIN_AVAILABLE = shutil.which("ffmpeg") is not None
 
 from .config import Config
 from .telegram_bot import TelegramBotHandler
@@ -52,6 +57,10 @@ class SecurityMonitor:
         self.audio_thread: Optional[threading.Thread] = None
         self.telegram_bot: Optional[TelegramBotHandler] = None
         self._manual_photo_requested = False
+        self._manual_recording_requested = False
+        self._manual_recording_duration = self.config.min_recording_seconds
+        self._manual_recording_active = False
+        self._ffmpeg_audio_process: Optional[subprocess.Popen] = None
         
         # Auto-detect headless environment
         if 'DISPLAY' not in os.environ and not self.config.headless:
@@ -82,6 +91,13 @@ class SecurityMonitor:
     def request_manual_photo(self) -> None:
         """Request a manual photo to be taken and sent."""
         self._manual_photo_requested = True
+
+    def request_manual_recording(self, duration_seconds: Optional[int] = None) -> None:
+        """Request a manual video recording regardless of motion/schedule."""
+        self._manual_recording_duration = (
+            int(duration_seconds) if duration_seconds else self.config.min_recording_seconds
+        )
+        self._manual_recording_requested = True
 
     def notify_error(self, error_msg: str, context: str = "") -> None:
         """Send an error notification to Telegram chat with device identifier."""
@@ -240,22 +256,167 @@ class SecurityMonitor:
         sys.exit(0)
 
     def _record_audio(self, audio_path: str) -> None:
-        """Record audio in a separate thread."""
+        """Legacy sounddevice audio recorder (unused if ffmpeg binary available)."""
         try:
-            # Record audio for the duration of motion
-            duration = self.config.grace_period
+            duration = self.config.min_recording_seconds
             sample_rate = 44100
-            
-            print(f"[INFO] Recording audio for {duration} seconds...")
+            print(f"[INFO] [Legacy] Recording audio for {duration} seconds...")
             recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
             sd.wait()
-            
-            # Save the audio
             sf.write(audio_path, recording, sample_rate)
-            print(f"[INFO] Audio saved to: {audio_path}")
-            
         except Exception as e:
-            print(f"[ERROR] Audio recording failed: {e}")
+            print(f"[ERROR] Legacy audio recording failed: {e}")
+
+    def _get_ffmpeg_audio_input(self) -> Optional[tuple[str, str]]:
+        """Return (format, device) tuple for ffmpeg audio input based on OS, or None if unknown."""
+        try:
+            if sys.platform == "darwin":
+                # Default microphone on macOS via avfoundation
+                return ("avfoundation", ":0")
+            if sys.platform.startswith("linux"):
+                # Default ALSA device
+                return ("alsa", "default")
+            if os.name == "nt":
+                # Best-effort default on Windows via dshow
+                return ("dshow", "audio=Default")
+        except Exception:
+            pass
+        return None
+
+    def _start_ffmpeg_audio_capture(self, audio_path: str) -> None:
+        """Start ffmpeg process to capture microphone audio to audio_path (wav)."""
+        if not FFMPEG_BIN_AVAILABLE:
+            print("[WARNING] ffmpeg binary not found. Cannot capture audio.")
+            return
+        audio_input = self._get_ffmpeg_audio_input()
+        if audio_input is None:
+            print("[WARNING] Could not determine audio input device for ffmpeg.")
+            return
+
+        fmt, device = audio_input
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            fmt,
+            "-i",
+            device,
+            "-ac",
+            "1",
+            "-ar",
+            "44100",
+            "-c:a",
+            "pcm_s16le",
+            audio_path,
+        ]
+        try:
+            print("[INFO] Starting ffmpeg audio capture...")
+            self._ffmpeg_audio_process = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to start ffmpeg audio capture: {e}")
+            self._ffmpeg_audio_process = None
+
+    def _stop_ffmpeg_audio_capture(self) -> None:
+        """Stop ffmpeg audio capture process gracefully."""
+        proc = self._ffmpeg_audio_process
+        if not proc:
+            return
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                try:
+                    proc.stdin.write(b"q\n")
+                    proc.stdin.flush()
+                except Exception:
+                    pass
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        finally:
+            self._ffmpeg_audio_process = None
+
+    def _merge_video_with_audio(self, video_path: str, audio_path: Optional[str], final_path: str) -> None:
+        """Merge video with audio (or silent track) into MP4 using ffmpeg binary."""
+        if not FFMPEG_BIN_AVAILABLE:
+            # Fallback: try ffmpeg-python if available
+            if FFMPEG_AVAILABLE and audio_path and os.path.exists(audio_path):
+                try:
+                    print("[INFO] Merging with ffmpeg-python as fallback...")
+                    v = ffmpeg.input(video_path)
+                    a = ffmpeg.input(audio_path)
+                    (
+                        ffmpeg
+                        .output(v, a, final_path, vcodec="libx264", acodec="aac", preset="veryfast", crf=23)
+                        .overwrite_output()
+                        .run(quiet=True)
+                    )
+                    return
+                except Exception as e:
+                    print(f"[ERROR] ffmpeg-python merge failed: {e}")
+            # As last resort, just copy video (no audio)
+            print("[WARNING] ffmpeg binary not available; sending video without audio.")
+            self.send_telegram_video(video_path, "🎥 Recording complete (video only)")
+            return
+
+        try:
+            if audio_path and os.path.exists(audio_path):
+                cmd = [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-i",
+                    audio_path,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    final_path,
+                ]
+            else:
+                # Generate silent audio track to satisfy "all videos must include audio"
+                cmd = [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=44100:cl=mono",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    final_path,
+                ]
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] ffmpeg merge failed: {e}")
+            # As fallback, attempt to send original video
+            self.send_telegram_video(video_path, "🎥 Recording complete (video only)")
 
     def clean_old_files_scheduler(self) -> None:
         """Background thread to clean old files periodically."""
@@ -318,6 +479,7 @@ class SecurityMonitor:
         audio_path = ""
         final_path = ""
         recording_start_time = None
+        manual_recording_target = None
 
         while self.running:
             ret, frame = self.cap.read()
@@ -360,10 +522,44 @@ class SecurityMonitor:
 
             current_time = time.time()
 
-            # Only process motion detection during monitoring hours
+            # Manual recording trigger (ignores monitoring hours)
+            if self._manual_recording_requested and not recording:
+                print("[INFO] Manual recording requested. Starting now.")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                media_dir = self.config.get_media_storage_path()
+                video_path = str(media_dir / f"temp_video_{timestamp}.avi")
+                audio_path = str(media_dir / f"temp_audio_{timestamp}.wav")
+                final_path = str(media_dir / f"recording_{timestamp}.mp4")
+                start_image_path = str(media_dir / f"start_{timestamp}.jpg")
+                cv2.imwrite(start_image_path, frame)
+                self.send_telegram_photo(start_image_path, "🎬 Manual recording started (Start)")
+                start_image_saved = True
+                first_motion_time = current_time
+                second_image_taken = False
+
+                fourcc = cv2.VideoWriter_fourcc(*"XVID")  # type: ignore
+                self.out = cv2.VideoWriter(
+                    video_path,
+                    fourcc,
+                    self.config.recording_fps,
+                    (frame.shape[1], frame.shape[0]),
+                )
+
+                # Start ffmpeg audio capture if possible
+                if FFMPEG_BIN_AVAILABLE:
+                    self._start_ffmpeg_audio_capture(audio_path)
+
+                recording = True
+                self._manual_recording_active = True
+                self._manual_recording_requested = False
+                recording_start_time = current_time
+                manual_recording_target = self._manual_recording_duration
+                motion_timer = current_time  # initialize
+
+            # Motion-triggered recording during monitoring hours
             if motion_detected and self.is_monitoring_hours():
                 if not recording:
-                    audio_status = "with audio" if AUDIO_AVAILABLE else "video only"
+                    audio_status = "with audio" if FFMPEG_BIN_AVAILABLE else "video only"
                     print(
                         f"[INFO] Motion detected during monitoring hours. Starting recording {audio_status}."
                     )
@@ -371,14 +567,9 @@ class SecurityMonitor:
 
                     media_dir = self.config.get_media_storage_path()
 
-                    if AUDIO_AVAILABLE and FFMPEG_AVAILABLE:
-                        video_path = str(media_dir / f"temp_video_{timestamp}.avi")
-                        audio_path = str(media_dir / f"temp_audio_{timestamp}.wav")
-                        final_path = str(media_dir / f"recording_{timestamp}.mp4")
-                    else:
-                        video_path = str(media_dir / f"recording_{timestamp}.avi")
-                        final_path = video_path
-                        audio_path = ""
+                    video_path = str(media_dir / f"temp_video_{timestamp}.avi")
+                    audio_path = str(media_dir / f"temp_audio_{timestamp}.wav")
+                    final_path = str(media_dir / f"recording_{timestamp}.mp4")
 
                     # Save start image
                     start_image_path = str(media_dir / f"start_{timestamp}.jpg")
@@ -389,8 +580,6 @@ class SecurityMonitor:
                     second_image_taken = False
                     
                     # Initialize recording
-
-                    # Fix: Use proper fourcc code
                     fourcc = cv2.VideoWriter_fourcc(*"XVID")  # type: ignore
                     self.out = cv2.VideoWriter(
                         video_path,
@@ -399,79 +588,90 @@ class SecurityMonitor:
                         (frame.shape[1], frame.shape[0]),
                     )
 
-                    if AUDIO_AVAILABLE:
-                        self.audio_recording = True
-                        self.audio_thread = threading.Thread(
-                            target=self._record_audio, args=(audio_path,), daemon=True
-                        )
-                        self.audio_thread.start()
+                    # Start ffmpeg audio capture if possible
+                    if FFMPEG_BIN_AVAILABLE:
+                        self._start_ffmpeg_audio_capture(audio_path)
 
                     recording = True
                     telegram_sent = False
                     motion_timer = current_time
                     recording_start_time = current_time
+                    self._manual_recording_active = False
+                    manual_recording_target = None
 
-                # Continue recording the full video
-                if recording and self.out is not None:
-                    self.out.write(frame)
-
+                # Update last motion time if recording
+                if recording:
+                    motion_timer = current_time
                     # Check if we should take a second image (after 5 seconds of motion)
-                    if (not second_image_taken and first_motion_time is not None and 
-                        (current_time - first_motion_time) >= 5):
+                    if (
+                        not second_image_taken
+                        and first_motion_time is not None
+                        and (current_time - first_motion_time) >= 5
+                    ):
                         end_image_path = str(media_dir / f"end_{timestamp}.jpg")
                         cv2.imwrite(end_image_path, frame)
                         self.send_telegram_photo(end_image_path, "🚨 Motion detected! (End)")
                         second_image_taken = True
 
-            elif recording and motion_timer is not None:
-                # Motion stopped, check grace period
-                if current_time - motion_timer >= self.config.grace_period:
-                    print("[INFO] Motion stopped, finishing recording...")
-                    
-                    # Stop recording
+            # Handle stopping conditions
+            if recording and recording_start_time is not None:
+                # Write frame continuously while recording
+                if self.out is not None:
+                    self.out.write(frame)
+
+                elapsed = current_time - recording_start_time
+                should_stop = False
+
+                if self._manual_recording_active:
+                    # Stop after target duration for manual recording
+                    if manual_recording_target is not None and elapsed >= manual_recording_target:
+                        should_stop = True
+                else:
+                    # Motion-triggered: stop after grace period AND minimum duration met
+                    if motion_timer is not None:
+                        if (
+                            (current_time - motion_timer) >= self.config.grace_period
+                            and elapsed >= self.config.min_recording_seconds
+                        ):
+                            should_stop = True
+
+                if should_stop:
+                    print("[INFO] Finishing recording...")
+
+                    # Stop video writer
                     if self.out is not None:
                         self.out.release()
                         self.out = None
 
-                    # Stop audio recording
-                    if AUDIO_AVAILABLE and self.audio_recording:
-                        self.audio_recording = False
-                        if self.audio_thread:
-                            self.audio_thread.join(timeout=5)
+                    # Stop ffmpeg audio capture
+                    self._stop_ffmpeg_audio_capture()
 
-                    # Merge audio and video if available
-                    if AUDIO_AVAILABLE and FFMPEG_AVAILABLE and os.path.exists(audio_path):
-                        try:
-                            print("[INFO] Merging audio and video...")
-                            video_stream = ffmpeg.input(video_path)
-                            audio_stream = ffmpeg.input(audio_path)
-                            
-                            ffmpeg.output(
-                                video_stream, audio_stream, final_path,
-                                vcodec='copy', acodec='aac'
-                            ).overwrite_output().run(quiet=True)
-                            
-                            # Clean up temporary files
+                    # Merge with audio (or silent track) and send
+                    try:
+                        self._merge_video_with_audio(video_path, audio_path if os.path.exists(audio_path) else None, final_path)
+                        # Clean temp files
+                        if os.path.exists(video_path):
                             os.remove(video_path)
+                        if os.path.exists(audio_path):
                             os.remove(audio_path)
-                            
-                            # Send final video
-                            self.send_telegram_video(final_path, "🎥 Motion recording complete!")
-                            
-                        except Exception as e:
-                            print(f"[ERROR] Failed to merge audio/video: {e}")
-                            # Send original video if merge fails
-                            self.send_telegram_video(video_path, "🎥 Motion recording (video only)")
-                    else:
-                        # Send video without audio
-                        self.send_telegram_video(video_path, "🎥 Motion recording (video only)")
+                        # Send final video
+                        self.send_telegram_video(final_path, "🎥 Recording complete!")
+                    except Exception as e:
+                        print(f"[ERROR] Post-processing failed: {e}")
+                        # As fallback, try to send whatever video we have
+                        if os.path.exists(final_path):
+                            self.send_telegram_video(final_path, "🎥 Recording complete (postprocess error)")
+                        elif os.path.exists(video_path):
+                            self.send_telegram_video(video_path, "🎥 Recording (raw video)")
 
-                    # Clean up
+                    # Reset state
                     recording = False
                     motion_timer = None
                     telegram_sent = False
                     start_image_saved = False
                     second_image_taken = False
+                    self._manual_recording_active = False
+                    manual_recording_target = None
 
             # Handle manual photo requests
             if self._manual_photo_requested:

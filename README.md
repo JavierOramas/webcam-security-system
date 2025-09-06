@@ -4,7 +4,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/webcam-security.svg?style=flat-square)](https://pypi.org/project/webcam-security/)
 [![Downloads](https://img.shields.io/pypi/dm/webcam-security?style=flat-square)](https://pypi.org/project/webcam-security/)
 
-A Python package for webcam security monitoring with Telegram notifications. This package provides motion detection capabilities with configurable monitoring hours and automatic video recording.
+A Python package for webcam security monitoring with Telegram notifications. This package provides updatedon detection capabilities with configurable monitoring hours and automatic video recording.
 
 ## Features
 

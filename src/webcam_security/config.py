@@ -1,7 +1,6 @@
 """Configuration management for webcam security."""
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
@@ -16,15 +15,18 @@ class Config:
     topic_id: Optional[str] = None
     monitoring_start_hour: int = 22  # 10 PM
     monitoring_end_hour: int = 6  # 6 AM
-    grace_period: int = 25  # seconds
-    min_contour_area: int = 500
-    motion_threshold: int = 25 
-    recording_fps: float = 30.0
+    grace_period: int = 10  # seconds
+    min_contour_area: int = 30
+    motion_threshold: int = 60
+    recording_fps: float = 60
     cleanup_days: int = 3
     force_monitoring: bool = False  # Force monitoring regardless of time
-    device_identifier: Optional[str] = None  # Custom identifier for media messages
-    media_storage_path: Optional[str] = None  # Custom path for storing media files
+    # Custom identifier for media messages
+    device_identifier: Optional[str] = None
+    # Custom path for storing media files
+    media_storage_path: Optional[str] = None
     headless: bool = False  # Run without GUI preview
+    min_recording_seconds: int = 60  # Minimum duration for any recording
 
     @classmethod
     def load(cls) -> "Config":
@@ -67,7 +69,7 @@ class Config:
         else:
             # Default to ~/webcam-security
             path = Path.home() / "webcam-security"
-        
+
         # Create the directory if it doesn't exist
         path.mkdir(parents=True, exist_ok=True)
         return path
